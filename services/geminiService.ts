@@ -1,0 +1,136 @@
+import { GoogleGenAI, Modality } from "@google/genai";
+
+// Ensure the API key is available from environment variables.
+const API_KEY = process.env.API_KEY;
+if (!API_KEY) {
+  // This will be caught by the framework and shown to the user.
+  throw new Error("API_KEY environment variable not set. Please configure it to use the AI features.");
+}
+
+const ai = new GoogleGenAI({ apiKey: API_KEY });
+
+const getBackgroundInstruction = (style: string): string => {
+    if (style.startsWith('#')) {
+        return `**Critically, you must replace or transmute the existing background into a sophisticated studio environment with a solid, clean tone matching this color: ${style}.** The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting. It should have a sense of depth, not just be a flat color.`;
+    }
+
+    switch (style) {
+        case 'plain-light':
+            return `**Critically, you must replace or transmute the existing background into a flawless, high-end, professional studio white seamless backdrop, fit for a celebrity portrait (e.g., Denzel Washington by a master photographer).** The background should be perfectly and luminously lit, appearing as a clean, dimensional white or very light gray. Avoid a flat, digital #FFFFFF look. Instead, create a subtle, photographic gradient that suggests depth and a professional studio environment. If appropriate, add a soft, realistic floor shadow to ground the subject naturally. The final effect must be luxurious, clean, and supremely professional.`;
+        case 'plain-dark':
+             return `**Critically, you must replace or transmute the existing background into a sophisticated studio environment with a solid, plain dark charcoal or black backdrop.** The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting, creating a dramatic and focused portrait look.`;
+        case 'subtle-gradient':
+            return `**Critically, you must replace or transmute the existing background into a sophisticated studio environment with a subtle, non-distracting gray or charcoal gradient.** The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting.`;
+        case 'textured-canvas':
+            return `**Critically, you must replace or transmute the existing background into a sophisticated studio environment with a textured canvas backdrop, similar to those used in classical painting or high-end photography.** The texture should be subtle and elegant. The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting.`;
+        case 'deep-void':
+            return `**Critically, you must replace or transmute the existing background into a sophisticated studio environment consisting of a deep, dark charcoal or black void. Use gentle separation lighting to ensure the subject stands out beautifully.** The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting.`;
+        case 'ai-choice':
+        default:
+             return `**Critically, you must replace or transmute the existing background into a rich and sophisticated studio environment.** Do not simply make it a flat color. Create a believable, high-end setting, such as a textured canvas backdrop, a subtly lit mottled gray wall, or a deep charcoal void with gentle separation lighting. The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting.`;
+    }
+};
+
+const getDetailInstruction = (level: number): string => {
+    if (level <= 10) {
+        return "Preserve the original texture level, focusing only on lighting and tone. Do not add artificial sharpness.";
+    }
+    if (level <= 40) { // Default range
+        return "Subtly enhance the clarity of fine details like skin pores, fabric weaves, and hair strands. The effect must be natural and almost unnoticeable, enhancing realism without appearing processed.";
+    }
+    if (level <= 75) {
+        return "Moderately increase the sharpness and clarity of fine textures. Aim for a crisp, high-fidelity look that highlights details like hair, irises, and clothing weave, while ensuring the result remains natural and not artificial.";
+    }
+    return "Significantly sharpen fine details for a hyper-realistic, high-impact effect. This is for a highly stylized, commercial look. Focus on maximizing texture in key areas but be very careful to avoid over-processing and digital artifacts.";
+};
+
+const getMasterStyleInstruction = (style: string): string => {
+    switch (style) {
+        case 'richard-avedon':
+            return "Emulate the iconic style of Richard Avedon. This means high-contrast, high-key lighting that sculpts the subject against a stark, minimalist background (usually white or light gray). The portrait must be sharp, direct, and psychologically penetrating. The focus is entirely on the subject's character and expression.";
+        case 'diane-arbus':
+            return "Emulate the unique style of Diane Arbus. The composition should be direct, centered, and confrontational. Use lighting that mimics a direct, on-camera flash, creating distinct shadows and highlighting textures with raw clarity. The mood is about capturing an authentic, unflinching moment, preserving every unique detail of the subject.";
+        case 'ansel-adams-zone':
+            return "Apply the principles of Ansel Adams' Zone System to this portrait. The primary goal is achieving the maximum possible tonal range. Render the deepest, richest blacks without crushing detail, and the most luminous whites that still retain texture. Every mid-tone should be distinct and clear. The final image must possess breathtaking depth and clarity.";
+        case 'sebastiao-salgado':
+            return "Emulate the grand, epic style of Sebastião Salgado. The image must have a deep, dramatic tonal range with high contrast. Introduce a subtle, fine grain structure reminiscent of classic silver halide film. The lighting should be powerful and sculptural, and the overall mood must convey a sense of profound dignity and weight.";
+        case 'default-maestro':
+        default:
+            return "As the Monochrome Maestro, your default style is one of timeless, cinematic elegance. Create a sophisticated, high-end studio look with masterful lighting and subtle retouching. The goal is a clean, classic, 'old-money' aesthetic.";
+    }
+};
+
+export const enhancePortrait = async (base64ImageData: string, mimeType: string, backgroundStyle: string, detailLevel: number, masterStyle: string): Promise<string> => {
+    
+    const backgroundInstruction = getBackgroundInstruction(backgroundStyle);
+    const detailInstruction = getDetailInstruction(detailLevel);
+    const masterStyleInstruction = getMasterStyleInstruction(masterStyle);
+
+    const ENHANCEMENT_PROMPT = `You are a world-renowned digital artist and retoucher, specializing in high-fashion and fine-art portraiture, functioning like the 'Nano Banana' model. Your task is to analyze an uploaded portrait and transform it into a luxurious, fine-art black-and-white studio photograph, guided by a specific artistic style.
+
+**Artistic Style Emulation:** ${masterStyleInstruction}
+
+**NON-NEGOTIABLE CORE RULE: ABSOLUTE PRESERVATION OF THE SUBJECT'S IDENTITY**
+-   **Facial and Body Structure:** You are **strictly forbidden** from altering the subject's core facial features (nose, eyes, mouth shape, jawline), body shape, or any permanent characteristic. Do not slim, reshape, or modify the person's fundamental appearance. The subject's identity must remain 100% intact. This is your most critical instruction. Any change to the person's structure is a failure.
+-   **Expression and Features:** The subject's original expression and unique features must be perfectly preserved.
+
+Your goal is to elevate the image into a timeless masterpiece by enhancing the lighting, environment, and surface textures **AROUND** the subject, while leaving the subject themselves fundamentally unchanged.
+
+**Key Transformation Steps:**
+
+1.  **Analyze & Re-Light:** Based on the chosen artistic style, identify the original lighting and rebuild the light and shadow balance to achieve the desired mood and contrast—be it the starkness of Avedon or the tonal range of Adams.
+2.  **Studio Environment Transformation:** ${backgroundInstruction} This background must complement the chosen artistic style.
+3.  **Professional Subject Retouching (Surface-Level Only):**
+    *   **Skin:** Perform professional, surface-level skin retouching. Emulate the results of a frequency separation technique by smoothing uneven *tonal transitions* while **perfectly preserving natural skin texture**, including pores, freckles, and fine lines. Delicately remove only *temporary* blemishes. The result must look like flawless natural skin, not artificial smoothing. Any hint of "plastic" or "blurry" skin is a failure.
+    *   **Eyes:** Enhance the eyes with utmost subtlety. Gently brighten the iris to bring out detail, sharpen existing catchlights to add life, and naturally clean up the sclera (whites of the eyes). The effect must be imperceptible to the untrained eye.
+    *   **Hair:** Meticulously retouch the hair. Tame distracting flyaway strands, add subtle volume and shine, and enhance its texture and flow, ensuring it contributes to the overall polished, high-class look.
+    *   **Details & Texture:** ${detailInstruction} Also enhance the texture and detail in clothing and jewelry to match this level, rendering folds and reflections with authenticity.
+4.  **Sculpting with Light:** Apply masterful **global and micro dodge-and-burn** techniques to sculpt and add depth. Enhance the dimensionality of the *existing* facial planes like eyes, cheekbones, and the jawline without changing their shape.
+5.  **Tonal Mastery:** Ensure perfect tonal harmony across the entire image, reminiscent of a rich silver gelatin print. Every grayscale value must feel cohesive, elegant, and part of the chosen artistic vision.
+
+**Artistic Intent:**
+*   The final image must exude the prestige and aesthetic of the chosen master photographer or the default high-end editorial style.
+*   The final product should be indistinguishable from a portrait featured in **Vogue, Vanity Fair, or a SoHo art gallery.**
+
+**Technical Constraints:**
+*   Output as a high-fidelity PNG.
+*   Preserve the original image resolution.
+*   Maintain the original framing.
+
+Execute this transformation as a digital master printer, producing only world-class, luxurious results while adhering strictly to the preservation of the subject.
+`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+                parts: [
+                    {
+                        inlineData: {
+                            data: base64ImageData,
+                            mimeType: mimeType,
+                        },
+                    },
+                    {
+                        text: ENHANCEMENT_PROMPT,
+                    },
+                ],
+            },
+            config: {
+                responseModalities: [Modality.IMAGE, Modality.TEXT],
+            },
+        });
+
+        for (const part of response.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData && part.inlineData.mimeType.startsWith('image/')) {
+                return part.inlineData.data;
+            }
+        }
+        
+        throw new Error("No enhanced image was returned from the AI. The model may not have been able to process this specific image.");
+
+    } catch (error) {
+        console.error("Error enhancing portrait:", error);
+        throw new Error("Failed to process the image with the AI service. Please check your connection or try a different image.");
+    }
+};
