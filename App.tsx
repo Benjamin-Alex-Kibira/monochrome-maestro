@@ -4,165 +4,147 @@ import ImageUploader from './components/ImageUploader';
 import ImageComparator from './components/ImageComparator';
 import Spinner from './components/Spinner';
 import DownloadButton from './components/DownloadButton';
-import BackgroundSelector from './components/BackgroundSelector';
 import MasterStyleSelector from './components/MasterStyleSelector';
 import DetailSlider from './components/DetailSlider';
-import { enhancePortrait } from './services/geminiService';
+import BackgroundSelector from './components/BackgroundSelector';
+import NegativeSpaceToggle from './components/NegativeSpaceToggle';
+import PreviewDisplay from './components/PreviewDisplay';
+import { enhanceImage } from './services/geminiService';
 
-const App: React.FC = () => {
-    const [originalImage, setOriginalImage] = useState<string | null>(null);
-    const [originalMimeType, setOriginalMimeType] = useState<string | null>(null);
-    const [enhancedImage, setEnhancedImage] = useState<string | null>(null);
-    const [originalFileName, setOriginalFileName] = useState<string | null>(null);
+function App() {
+    const [originalImageFile, setOriginalImageFile] = useState<File | null>(null);
+    const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
+    const [enhancedImageUrl, setEnhancedImageUrl] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [masterStyle, setMasterStyle] = useState<string>(() => localStorage.getItem('masterStyle') || 'default-gevurah');
-    const [backgroundStyle, setBackgroundStyle] = useState<string>(() => localStorage.getItem('backgroundStyle') || 'plain-light');
-    const [detailLevel, setDetailLevel] = useState<number>(() => parseInt(localStorage.getItem('detailLevel') || '50', 10));
+    // Style and enhancement options state
+    const [masterStyle, setMasterStyle] = useState('default-gevurah');
+    const [detailLevel, setDetailLevel] = useState(50);
+    const [backgroundStyle, setBackgroundStyle] = useState('ai-choice');
+    const [addNegativeSpace, setAddNegativeSpace] = useState(true);
 
     useEffect(() => {
-        localStorage.setItem('masterStyle', masterStyle);
-    }, [masterStyle]);
+        const savedMasterStyle = localStorage.getItem('masterStyle');
+        if (savedMasterStyle) setMasterStyle(savedMasterStyle);
 
-    useEffect(() => {
-        localStorage.setItem('backgroundStyle', backgroundStyle);
-    }, [backgroundStyle]);
+        const savedDetailLevel = localStorage.getItem('detailLevel');
+        if (savedDetailLevel) setDetailLevel(JSON.parse(savedDetailLevel));
+        
+        const savedBackgroundStyle = localStorage.getItem('backgroundStyle');
+        if (savedBackgroundStyle) setBackgroundStyle(savedBackgroundStyle);
 
-    useEffect(() => {
-        localStorage.setItem('detailLevel', detailLevel.toString());
-    }, [detailLevel]);
+        const savedNegativeSpace = localStorage.getItem('addNegativeSpace');
+        if (savedNegativeSpace) setAddNegativeSpace(JSON.parse(savedNegativeSpace));
+
+    }, []);
+
+    useEffect(() => { localStorage.setItem('masterStyle', masterStyle); }, [masterStyle]);
+    useEffect(() => { localStorage.setItem('detailLevel', JSON.stringify(detailLevel)); }, [detailLevel]);
+    useEffect(() => { localStorage.setItem('backgroundStyle', backgroundStyle); }, [backgroundStyle]);
+    useEffect(() => { localStorage.setItem('addNegativeSpace', JSON.stringify(addNegativeSpace)); }, [addNegativeSpace]);
 
 
-    const processImage = async (base64Data: string, mimeType: string) => {
+    const resetState = useCallback(() => {
+        setOriginalImageFile(null);
+        setOriginalImageUrl(null);
+        setEnhancedImageUrl(null);
+        setIsLoading(false);
+        setError(null);
+    }, []);
+
+    const handleImageSelect = (file: File) => {
+        setOriginalImageFile(file);
+        setOriginalImageUrl(URL.createObjectURL(file));
+        setEnhancedImageUrl(null); // Clear previous result
+        setError(null);
+    };
+
+    const handleGeneration = async () => {
+        if (!originalImageFile) {
+            setError("Please upload an image first.");
+            return;
+        }
+
         setIsLoading(true);
         setError(null);
+
         try {
-            const { base64: enhancedBase64, mimeType: enhancedMimeType } = await enhancePortrait(base64Data, mimeType, masterStyle, backgroundStyle, detailLevel);
-            setEnhancedImage(`data:${enhancedMimeType};base64,${enhancedBase64}`);
-        } catch (err) {
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError("An unknown error occurred while processing the image.");
-            }
-            setEnhancedImage(null);
+            const resultUrl = await enhanceImage({
+                imageFile: originalImageFile,
+                masterStyle,
+                detailLevel,
+                backgroundStyle,
+                addNegativeSpace,
+            });
+            setEnhancedImageUrl(resultUrl);
+        } catch (err: any) {
+            setError(err.message || 'An unknown error occurred.');
         } finally {
             setIsLoading(false);
         }
     };
-
-    const handleImageSelect = useCallback(async (file: File) => {
-        if (!file.type.startsWith('image/')) {
-            setError('Please upload a valid image file (PNG, JPG, WEBP).');
-            return;
-        }
-        setEnhancedImage(null);
-        setOriginalFileName(file.name);
-        setOriginalMimeType(file.type);
-        
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = async (e) => {
-            const originalDataUrl = e.target?.result as string;
-            setOriginalImage(originalDataUrl);
-            const base64Data = originalDataUrl.split(',')[1];
-            processImage(base64Data, file.type);
-        };
-        reader.onerror = () => {
-             setError("Failed to read the selected file.");
-             setIsLoading(false);
-        };
-    }, [masterStyle, backgroundStyle, detailLevel]);
     
-    const handleEnhanceAgain = useCallback(async () => {
-        if (!originalImage || !originalMimeType) return;
-        const base64Data = originalImage.split(',')[1];
-        processImage(base64Data, originalMimeType);
-    }, [originalImage, originalMimeType, masterStyle, backgroundStyle, detailLevel]);
-
-    const handleStartOver = () => {
-        setOriginalImage(null);
-        setEnhancedImage(null);
-        setOriginalFileName(null);
-        setOriginalMimeType(null);
-        setError(null);
-        setIsLoading(false);
-    };
-    
-    const ControlsPanel = (
-        <div className="w-full max-w-4xl mx-auto my-8 p-6 bg-gray-800/50 border border-gray-700 rounded-lg space-y-8">
-            <MasterStyleSelector selectedStyle={masterStyle} onStyleChange={setMasterStyle} />
-            <BackgroundSelector selectedStyle={backgroundStyle} onStyleChange={setBackgroundStyle} />
-            <DetailSlider value={detailLevel} onChange={setDetailLevel} />
-        </div>
-    );
-
     const renderContent = () => {
-        if (isLoading) {
-            return <Spinner />;
-        }
-
-        if (error) {
-             return (
-                <div className="max-w-4xl mx-auto text-center">
-                    <p className="text-red-400 text-center my-8 font-sans bg-red-900/20 border border-red-500/30 p-4 rounded-md">{error}</p>
-                    {originalImage && (
-                        <div className="w-full rounded-lg overflow-hidden shadow-lg bg-gray-800 border-2 border-red-500/30">
-                            <img src={originalImage} alt="Original portrait (failed to process)" className="object-contain w-full h-full max-h-[50vh]" />
-                        </div>
-                    )}
-                    <div className="text-center mt-8 space-x-4">
-                        <button onClick={handleEnhanceAgain} disabled={isLoading} className="px-8 py-4 bg-gray-600 text-white font-sans font-semibold rounded-md hover:bg-gray-500 transition-colors">
-                            Try Again
-                        </button>
-                         <button onClick={handleStartOver} className="px-8 py-4 text-gray-400 font-sans font-semibold rounded-md hover:bg-white/5 transition-colors">
-                           Start Over
+        if (enhancedImageUrl && originalImageUrl) {
+            return (
+                <div className="text-center">
+                    <ImageComparator originalImage={originalImageUrl} enhancedImage={enhancedImageUrl} />
+                    <div className="flex flex-col md:flex-row items-center justify-center gap-4 mt-8">
+                        <DownloadButton imageUrl={enhancedImageUrl} fileName={originalImageFile?.name || 'masterpiece.png'} />
+                        <button
+                            onClick={resetState}
+                            className="px-8 py-4 bg-gray-800 text-gray-300 font-sans font-semibold rounded-md border border-gray-600 hover:bg-gray-700 hover:text-white transition-all duration-300"
+                        >
+                            Create Another
                         </button>
                     </div>
-                    {ControlsPanel}
                 </div>
             );
         }
 
-        if (originalImage && enhancedImage) {
-            return (
-                <>
-                    <ImageComparator originalImage={originalImage} enhancedImage={enhancedImage} />
-                    <div className="flex justify-center items-center gap-4 mt-6 mb-8">
-                       {originalFileName && <DownloadButton imageUrl={enhancedImage} fileName={originalFileName} />}
-                        <button onClick={handleEnhanceAgain} disabled={isLoading} className="px-8 py-4 bg-white/10 border border-white/20 text-white font-sans font-semibold rounded-md hover:bg-white/20 transition-colors">
-                           Re-generate Style
-                        </button>
-                         <button onClick={handleStartOver} className="px-8 py-4 text-gray-400 font-sans font-semibold rounded-md hover:bg-white/5 transition-colors">
-                           Start Over
-                        </button>
-                    </div>
-                    {ControlsPanel}
-                </>
-            );
+        if (isLoading) {
+             return <Spinner />;
         }
         
+        if (originalImageUrl) {
+            return (
+                <PreviewDisplay imageUrl={originalImageUrl} onGenerate={handleGeneration} isGenerating={isLoading}>
+                    <MasterStyleSelector selectedStyle={masterStyle} onStyleChange={setMasterStyle} />
+                    <DetailSlider value={detailLevel} onChange={setDetailLevel} />
+                    <BackgroundSelector selectedStyle={backgroundStyle} onStyleChange={setBackgroundStyle} />
+                    <NegativeSpaceToggle enabled={addNegativeSpace} onChange={setAddNegativeSpace} isLoading={isLoading} />
+                </PreviewDisplay>
+            );
+        }
+
         return (
             <>
-                {ControlsPanel}
+                <div className="w-full max-w-3xl mx-auto my-8 flex flex-col gap-8">
+                    <MasterStyleSelector selectedStyle={masterStyle} onStyleChange={setMasterStyle} />
+                    <DetailSlider value={detailLevel} onChange={setDetailLevel} />
+                    <BackgroundSelector selectedStyle={backgroundStyle} onStyleChange={setBackgroundStyle} />
+                    <NegativeSpaceToggle enabled={addNegativeSpace} onChange={setAddNegativeSpace} isLoading={isLoading} />
+                </div>
                 <ImageUploader onImageSelect={handleImageSelect} isLoading={isLoading} />
             </>
         );
     };
 
+
     return (
-        <div className="bg-gray-900 min-h-screen font-sans text-gray-200 selection:bg-gray-500 selection:text-white">
-            <main className="container mx-auto px-4 py-8">
+        <div className="bg-gray-900 min-h-screen text-white font-sans p-4 md:p-8">
+            <main className="container mx-auto">
                 <Header />
+                {error && (
+                    <div className="my-4 p-4 bg-red-900/50 border border-red-700 text-red-200 rounded-md text-center max-w-2xl mx-auto">
+                        <p><strong>Error:</strong> {error}</p>
+                    </div>
+                )}
                 {renderContent()}
             </main>
-            <footer className="text-center py-6 text-gray-600 text-sm space-y-1">
-                <p>A Project by Benjamin Alex Kibira</p>
-                <p>Powered by Gemini AI | Designed for Portrait Artists</p>
-            </footer>
         </div>
     );
-};
+}
 
 export default App;

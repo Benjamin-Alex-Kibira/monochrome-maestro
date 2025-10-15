@@ -8,7 +8,7 @@ interface BackgroundSelectorProps {
 const styles = [
     { id: 'ai-choice', name: 'AI Choice' },
     { id: 'plain-light', name: 'Plain Light' },
-    { id: 'plain-dark', name: 'Plain Dark' },
+    { id: 'plain-dark', name: 'Studio Dark' },
     { id: 'subtle-gradient', name: 'Subtle Gradient' },
     { id: 'textured-canvas', name: 'Textured Canvas' },
     { id: 'deep-void', name: 'Deep Void' },
