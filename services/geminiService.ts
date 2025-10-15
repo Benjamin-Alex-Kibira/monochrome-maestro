@@ -10,25 +10,35 @@ if (!API_KEY) {
 const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 const getBackgroundInstruction = (style: string): string => {
-    if (style.startsWith('#')) {
-        return `**Background:** Transmute the background into a sophisticated studio environment with a solid, clean tone matching this color: ${style}. The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting. It should have a sense of depth, not just be a flat color.`;
-    }
+    const preservationRule = `**Constraint:** If the subject is sitting on, leaning against, or directly interacting with any furniture or object (e.g., a chair, stool, table, wall), you MUST preserve that object. It is considered part of the foreground. Seamlessly integrate this object into the new studio environment.`;
+    let instruction = '';
 
-    switch (style) {
-        case 'plain-light':
-            return `**Background:** Transmute the background into a flawless, high-end, professional studio white seamless backdrop. The background should be perfectly and luminously lit, appearing as a clean, dimensional white or very light gray. Avoid a flat, digital #FFFFFF look. Instead, create a subtle, photographic gradient that suggests depth and a professional studio environment. If appropriate, add a soft, realistic floor shadow to ground the subject naturally.`;
-        case 'plain-dark':
-             return `**Background:** Transmute the background into a sophisticated studio environment with a solid, plain dark charcoal or black backdrop. The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting.`;
-        case 'subtle-gradient':
-            return `**Background:** Transmute the background into a sophisticated studio environment with a subtle, non-distracting gray or charcoal gradient. The new environment must feel intentional and perfectly integrated with the subject's lighting.`;
-        case 'textured-canvas':
-            return `**Background:** Transmute the background into a sophisticated studio environment with a textured canvas backdrop, similar to those used in classical painting or high-end photography. The texture should be subtle and elegant.`;
-        case 'deep-void':
-            return `**Background:** Transmute the background into a sophisticated studio environment consisting of a deep, dark charcoal or black void. Use gentle separation lighting to ensure the subject stands out beautifully.`;
-        case 'ai-choice':
-        default:
-             return `**Background:** Transmute the background into a rich and sophisticated studio environment. Create a believable, high-end setting, such as a textured canvas backdrop, a subtly lit mottled gray wall, or a deep charcoal void with gentle separation lighting.`;
+    if (style.startsWith('#')) {
+        instruction = `**Background:** Transmute the background into a sophisticated studio environment with a solid, clean tone matching this color: ${style}. The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting. It should have a sense of depth, not just be a flat color.`;
+    } else {
+        switch (style) {
+            case 'plain-light':
+                instruction = `**Background:** Transmute the background into a flawless, high-end, professional studio white seamless backdrop. The background should be perfectly and luminously lit, appearing as a clean, dimensional white or very light gray. Avoid a flat, digital #FFFFFF look. Instead, create a subtle, photographic gradient that suggests depth and a professional studio environment. If appropriate, add a soft, realistic floor shadow to ground the subject naturally.`;
+                break;
+            case 'plain-dark':
+                 instruction = `**Background:** Transmute the background into a sophisticated studio environment with a solid, plain dark charcoal or black backdrop. The new environment must feel intentional, luxurious, and perfectly integrated with the subject's lighting.`;
+                 break;
+            case 'subtle-gradient':
+                instruction = `**Background:** Transmute the background into a sophisticated studio environment with a subtle, non-distracting gray or charcoal gradient. The new environment must feel intentional and perfectly integrated with the subject's lighting.`;
+                break;
+            case 'textured-canvas':
+                instruction = `**Background:** Transmute the background into a sophisticated studio environment with a textured canvas backdrop, similar to those used in classical painting or high-end photography. The texture should be subtle and elegant.`;
+                break;
+            case 'deep-void':
+                instruction = `**Background:** Transmute the background into a sophisticated studio environment consisting of a deep, dark charcoal or black void. Use gentle separation lighting to ensure the subject stands out beautifully.`;
+                break;
+            case 'ai-choice':
+            default:
+                 instruction = `**Background:** Transmute the background into a rich and sophisticated studio environment. Create a believable, high-end setting, such as a textured canvas backdrop, a subtly lit mottled gray wall, or a deep charcoal void with gentle separation lighting.`;
+                 break;
+        }
     }
+    return `${preservationRule}\n${instruction}`;
 };
 
 const getDetailInstruction = (level: number): string => {
@@ -96,11 +106,12 @@ You are a world-class digital photo retoucher and AI art director, operating the
     *   **Global Adjustments:** Apply masterful **global dodge-and-burn** only to enhance the dimensionality of the *existing* facial planes. Do not use it to reshape the face.
 
 **QUALITY CHECK:**
-*   The final image must be instantly and unquestionably recognizable as the same person with the exact same expression as the original.
-*   The result must look like a real, high-end photograph, not a digital painting. Avoid all digital artifacts.
+*   **Photorealism Mandate:** The final output must be indistinguishable from a high-resolution photograph taken with professional camera equipment (e.g., a Phase One or Hasselblad medium format camera). It must exhibit a high degree of acutance, fine detail, and subtle, realistic grain if the style calls for it.
+*   **Artifact Prohibition:** Aggressively avoid all common digital artifacts. This includes, but is not limited to: plastic-looking skin, overly smooth or waxy textures, strange "airbrushed" effects, pixelation, banding in gradients, and unnatural sharpening halos.
+*   **Identity Preservation:** The final image must be instantly and unquestionably recognizable as the same person with the exact same expression as the original. This is a paramount rule.
 
 **CRITICAL OUTPUT INSTRUCTION:**
-Your output **MUST** be the final processed image and **ONLY** the image, rendered at the highest possible resolution as a lossless PNG file.
+Your output **MUST** be the final processed image and **ONLY** the image. Render the image at an extremely high resolution, suitable for a large-format gallery print (e.g., at least 2048px on its longest side, preserving the original aspect ratio). The output format **MUST** be a lossless PNG to ensure maximum fidelity and zero compression artifacts.
 `;
 
 const callGemini = async (prompt: string, base64ImageData: string, mimeType: string): Promise<{ base64: string, mimeType: string }> => {
