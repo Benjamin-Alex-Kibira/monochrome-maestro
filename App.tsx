@@ -40,8 +40,8 @@ const App: React.FC = () => {
         setIsLoading(true);
         setError(null);
         try {
-            const enhancedBase64 = await enhancePortrait(base64Data, mimeType, backgroundStyle, detailLevel, masterStyle);
-            setEnhancedImage(`data:image/png;base64,${enhancedBase64}`);
+            const { base64: enhancedBase64, mimeType: enhancedMimeType } = await enhancePortrait(base64Data, mimeType, backgroundStyle, detailLevel, masterStyle);
+            setEnhancedImage(`data:${enhancedMimeType};base64,${enhancedBase64}`);
         } catch (err) {
             if (err instanceof Error) {
                 setError(err.message);

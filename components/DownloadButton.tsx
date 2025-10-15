@@ -1,4 +1,3 @@
-
 import React from 'react';
 import DownloadIcon from './icons/DownloadIcon';
 
@@ -16,7 +15,16 @@ const DownloadButton: React.FC<DownloadButtonProps> = ({ imageUrl, fileName }) =
         nameParts.pop();
         const baseName = nameParts.join('.');
         
-        link.download = `${baseName}-monochrome.png`; // Always download as PNG for high quality
+        // Determine file extension from the data URL's MIME type for accuracy
+        const mimeType = imageUrl.substring(imageUrl.indexOf(':') + 1, imageUrl.indexOf(';'));
+        let extension = 'png'; // Default to PNG for high quality
+        if (mimeType === 'image/jpeg') {
+            extension = 'jpg';
+        } else if (mimeType === 'image/webp') {
+            extension = 'webp';
+        }
+        
+        link.download = `${baseName}-monochrome.${extension}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
