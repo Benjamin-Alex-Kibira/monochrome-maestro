@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Header from './components/Header';
 import ImageUploader from './components/ImageUploader';
 import ImageComparator from './components/ImageComparator';
@@ -16,9 +16,25 @@ const App: React.FC = () => {
     const [originalFileName, setOriginalFileName] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
-    const [masterStyle, setMasterStyle] = useState<string>('default-maestro');
-    const [backgroundStyle, setBackgroundStyle] = useState<string>('ai-choice');
-    const [detailLevel, setDetailLevel] = useState<number>(30);
+
+    const [masterStyle, setMasterStyle] = useState<string>(() => localStorage.getItem('masterStyle') || 'default-maestro');
+    const [backgroundStyle, setBackgroundStyle] = useState<string>(() => localStorage.getItem('backgroundStyle') || 'ai-choice');
+    const [detailLevel, setDetailLevel] = useState<number>(() => {
+        const savedLevel = localStorage.getItem('detailLevel');
+        return savedLevel ? parseInt(savedLevel, 10) : 30;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('masterStyle', masterStyle);
+    }, [masterStyle]);
+
+    useEffect(() => {
+        localStorage.setItem('backgroundStyle', backgroundStyle);
+    }, [backgroundStyle]);
+
+    useEffect(() => {
+        localStorage.setItem('detailLevel', detailLevel.toString());
+    }, [detailLevel]);
 
     const processImage = async (base64Data: string, mimeType: string) => {
         setIsLoading(true);
@@ -32,7 +48,7 @@ const App: React.FC = () => {
             } else {
                 setError("An unknown error occurred while processing the image.");
             }
-            setEnhancedImage(null); // Clear previous success on new error
+            setEnhancedImage(null);
         } finally {
             setIsLoading(false);
         }
@@ -43,7 +59,6 @@ const App: React.FC = () => {
             setError('Please upload a valid image file (PNG, JPG, WEBP).');
             return;
         }
-
         setEnhancedImage(null);
         setOriginalFileName(file.name);
         setOriginalMimeType(file.type);
@@ -64,10 +79,8 @@ const App: React.FC = () => {
     
     const handleEnhanceAgain = useCallback(async () => {
         if (!originalImage || !originalMimeType) return;
-        
         const base64Data = originalImage.split(',')[1];
         processImage(base64Data, originalMimeType);
-
     }, [originalImage, originalMimeType, backgroundStyle, detailLevel, masterStyle]);
 
     const handleStartOver = () => {
@@ -80,7 +93,7 @@ const App: React.FC = () => {
     };
 
     const renderControls = () => (
-        <div className="w-full max-w-4xl mx-auto space-y-8 mt-12">
+        <div className="w-full max-w-4xl mx-auto space-y-8 mt-4">
             <MasterStyleSelector selectedStyle={masterStyle} onStyleChange={setMasterStyle} />
             <BackgroundSelector selectedStyle={backgroundStyle} onStyleChange={setBackgroundStyle} />
             <DetailSlider level={detailLevel} onLevelChange={setDetailLevel} />
@@ -132,8 +145,7 @@ const App: React.FC = () => {
                 </>
             );
         }
-
-        // Fallback for originalImage is present, but no enhancedImage yet and not loading (initial state after upload)
+        
         return <Spinner />;
     };
 
