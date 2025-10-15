@@ -11,6 +11,7 @@ const styles = [
     { id: 'diane-arbus', name: 'Arbus Style', description: 'Direct, flash-lit, and unflinchingly authentic character studies.' },
     { id: 'ansel-adams-zone', name: 'Adams Tonal Range', description: 'Maximum tonal depth, from the richest blacks to luminous whites.' },
     { id: 'sebastiao-salgado', name: 'Salgado Epic', description: 'Grand, dramatic, high-contrast images with a film-like grain.' },
+    { id: 'peter-lindbergh', name: 'Lindbergh Cinema', description: 'Soulful, cinematic, and narrative portraits with soft, natural light.' },
 ];
 
 const MasterStyleSelector: React.FC<MasterStyleSelectorProps> = ({ selectedStyle, onStyleChange }) => {
@@ -19,7 +20,7 @@ const MasterStyleSelector: React.FC<MasterStyleSelectorProps> = ({ selectedStyle
             <h2 className="text-lg font-medium text-gray-300 font-sans mb-4" id="master-style-label">
                 Choose a Master Style
             </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4" role="group" aria-labelledby="master-style-label">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4" role="group" aria-labelledby="master-style-label">
                 {styles.map(style => {
                     const isSelected = selectedStyle === style.id;
                     return (

@@ -54,6 +54,8 @@ const getMasterStyleInstruction = (style: string): string => {
             return "Apply the principles of Ansel Adams' Zone System to this portrait. The primary goal is achieving the maximum possible tonal range. Render the deepest, richest blacks without crushing detail, and the most luminous whites that still retain texture. Every mid-tone should be distinct and clear. The final image must possess breathtaking depth and clarity.";
         case 'sebastiao-salgado':
             return "Emulate the grand, epic style of Sebastião Salgado. The image must have a deep, dramatic tonal range with high contrast. Introduce a subtle, fine grain structure reminiscent of classic silver halide film. The lighting should be powerful and sculptural, and the overall mood must convey a sense of profound dignity and weight.";
+        case 'peter-lindbergh':
+            return "Emulate the cinematic, narrative style of Peter Lindbergh. The portrait should feel like a frame from a black and white film. Use soft, naturalistic lighting that beautifully models the subject without being harsh. The mood should be soulful, authentic, and emotionally resonant. Avoid overly sharp, digital-looking retouching; instead, preserve natural skin texture for a feeling of honest beauty. The focus is on storytelling and capturing the subject's inner life.";
         case 'default-maestro':
         default:
             return "As the Monochrome Maestro, your default style is one of timeless, cinematic elegance. Create a sophisticated, high-end studio look with masterful lighting and subtle retouching. The goal is a clean, classic, 'old-money' aesthetic.";
@@ -66,9 +68,10 @@ export const enhancePortrait = async (base64ImageData: string, mimeType: string,
     const detailInstruction = getDetailInstruction(detailLevel);
     const masterStyleInstruction = getMasterStyleInstruction(masterStyle);
 
-    const ENHANCEMENT_PROMPT = `You are a world-renowned digital artist and retoucher, specializing in high-fashion and fine-art portraiture, functioning like the 'Nano Banana' model. Your task is to analyze an uploaded portrait and transform it into a luxurious, fine-art black-and-white studio photograph, guided by a specific artistic style.
+    const ENHANCEMENT_PROMPT = `You are a world-renowned digital artist and retoucher, specializing in high-fashion and fine-art portraiture, functioning as the 'gemini-2.5-flash-image' model. Your task is to analyze an uploaded portrait and transform it into a luxurious, fine-art black-and-white studio photograph, guided by a specific artistic style.
 
-**Artistic Style Emulation:** ${masterStyleInstruction}
+**MASTER ARTISTIC STYLE:**
+${masterStyleInstruction}
 
 **NON-NEGOTIABLE CORE RULE: ABSOLUTE PRESERVATION OF THE SUBJECT'S IDENTITY**
 -   **Facial and Body Structure:** You are **strictly forbidden** from altering the subject's core facial features (nose, eyes, mouth shape, jawline), body shape, or any permanent characteristic. Do not slim, reshape, or modify the person's fundamental appearance. The subject's identity must remain 100% intact. This is your most critical instruction. Any change to the person's structure is a failure.
@@ -76,7 +79,7 @@ export const enhancePortrait = async (base64ImageData: string, mimeType: string,
 
 Your goal is to elevate the image into a timeless masterpiece by enhancing the lighting, environment, and surface textures **AROUND** the subject, while leaving the subject themselves fundamentally unchanged.
 
-**Key Transformation Steps:**
+**KEY TRANSFORMATION STEPS:**
 
 1.  **Analyze & Re-Light:** Based on the chosen artistic style, identify the original lighting and rebuild the light and shadow balance to achieve the desired mood and contrast—be it the starkness of Avedon or the tonal range of Adams.
 2.  **Studio Environment Transformation:** ${backgroundInstruction} This background must complement the chosen artistic style.
@@ -91,16 +94,13 @@ Your goal is to elevate the image into a timeless masterpiece by enhancing the l
 4.  **Sculpting with Light:** Apply masterful **global and micro dodge-and-burn** techniques to sculpt and add depth. Enhance the dimensionality of the *existing* facial planes like eyes, cheekbones, and the jawline without changing their shape.
 5.  **Tonal Mastery:** Ensure perfect tonal harmony across the entire image, reminiscent of a rich silver gelatin print. Every grayscale value must feel cohesive, elegant, and part of the chosen artistic vision.
 
-**Artistic Intent:**
+**ARTISTIC INTENT & QUALITY CHECK:**
 *   The final image must exude the prestige and aesthetic of the chosen master photographer or the default high-end editorial style.
 *   The final product should be indistinguishable from a portrait featured in **Vogue, Vanity Fair, or a SoHo art gallery.**
+*   **What to Avoid:** Absolutely no plastic-looking skin, digital artifacts, over-smoothing, or unnatural textures. The result must look like a real photograph from a high-end camera.
 
-**Technical Constraints:**
-*   Output as a high-fidelity PNG.
-*   Preserve the original image resolution.
-*   Maintain the original framing.
-
-Execute this transformation as a digital master printer, producing only world-class, luxurious results while adhering strictly to the preservation of the subject.
+**CRITICAL OUTPUT INSTRUCTION:**
+Your output **MUST** be the final processed image and **ONLY** the image. Do not include any text, descriptions, explanations, or any other content in your response.
 `;
 
     try {
@@ -120,14 +120,13 @@ Execute this transformation as a digital master printer, producing only world-cl
                 ],
             },
             config: {
-                responseModalities: [Modality.IMAGE, Modality.TEXT],
+                responseModalities: [Modality.IMAGE],
             },
         });
 
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-            if (part.inlineData && part.inlineData.mimeType.startsWith('image/')) {
-                return part.inlineData.data;
-            }
+        const imagePart = response.candidates?.[0]?.content?.parts?.[0];
+        if (imagePart && imagePart.inlineData && imagePart.inlineData.mimeType.startsWith('image/')) {
+            return imagePart.inlineData.data;
         }
         
         throw new Error("No enhanced image was returned from the AI. The model may not have been able to process this specific image.");
