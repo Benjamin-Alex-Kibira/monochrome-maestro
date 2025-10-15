@@ -1,35 +1,34 @@
 import React from 'react';
 
 interface DetailSliderProps {
-    level: number;
-    onLevelChange: (level: number) => void;
+    value: number;
+    onChange: (value: number) => void;
 }
 
-const DetailSlider: React.FC<DetailSliderProps> = ({ level, onLevelChange }) => {
+const DetailSlider: React.FC<DetailSliderProps> = ({ value, onChange }) => {
     return (
-        <div className="w-full max-w-3xl mx-auto my-8 text-center" aria-label="Detail Enhancement Slider">
-            <label htmlFor="detail-slider" className="text-lg font-medium text-gray-300 font-sans mb-4 block">
+        <div aria-label="Detail Enhancement Slider">
+            <h2 className="text-lg font-medium text-gray-300 font-sans mb-4 text-center" id="detail-slider-label">
                 Detail Enhancement
-            </label>
-            <div className="flex items-center justify-center gap-4">
+            </h2>
+            <div className="relative pt-1">
                 <input
-                    id="detail-slider"
                     type="range"
                     min="0"
                     max="100"
-                    value={level}
-                    onChange={(e) => onLevelChange(e.target.valueAsNumber)}
-                    className="w-64 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-gray-300"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={level}
+                    value={value}
+                    onChange={(e) => onChange(parseInt(e.target.value, 10))}
+                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    aria-labelledby="detail-slider-label"
                 />
-                <span className="text-lg font-sans font-medium text-gray-200 w-12 text-center bg-gray-800 border border-gray-700 rounded-md py-1">
-                    {level}
-                </span>
+                <div className="flex justify-between text-xs text-gray-500 mt-2">
+                    <span>Soft</span>
+                    <span>Natural</span>
+                    <span>Crisp</span>
+                </div>
             </div>
         </div>
     );
 };
 
-export default DetailSlider;
+export default React.memo(DetailSlider);

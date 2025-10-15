@@ -5,8 +5,8 @@ import ImageComparator from './components/ImageComparator';
 import Spinner from './components/Spinner';
 import DownloadButton from './components/DownloadButton';
 import BackgroundSelector from './components/BackgroundSelector';
-import DetailSlider from './components/DetailSlider';
 import MasterStyleSelector from './components/MasterStyleSelector';
+import DetailSlider from './components/DetailSlider';
 import { enhancePortrait } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -17,12 +17,9 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [masterStyle, setMasterStyle] = useState<string>(() => localStorage.getItem('masterStyle') || 'default-maestro');
-    const [backgroundStyle, setBackgroundStyle] = useState<string>(() => localStorage.getItem('backgroundStyle') || 'ai-choice');
-    const [detailLevel, setDetailLevel] = useState<number>(() => {
-        const savedLevel = localStorage.getItem('detailLevel');
-        return savedLevel ? parseInt(savedLevel, 10) : 30;
-    });
+    const [masterStyle, setMasterStyle] = useState<string>(() => localStorage.getItem('masterStyle') || 'default-gevurah');
+    const [backgroundStyle, setBackgroundStyle] = useState<string>(() => localStorage.getItem('backgroundStyle') || 'plain-light');
+    const [detailLevel, setDetailLevel] = useState<number>(() => parseInt(localStorage.getItem('detailLevel') || '50', 10));
 
     useEffect(() => {
         localStorage.setItem('masterStyle', masterStyle);
@@ -36,11 +33,12 @@ const App: React.FC = () => {
         localStorage.setItem('detailLevel', detailLevel.toString());
     }, [detailLevel]);
 
+
     const processImage = async (base64Data: string, mimeType: string) => {
         setIsLoading(true);
         setError(null);
         try {
-            const { base64: enhancedBase64, mimeType: enhancedMimeType } = await enhancePortrait(base64Data, mimeType, backgroundStyle, detailLevel, masterStyle);
+            const { base64: enhancedBase64, mimeType: enhancedMimeType } = await enhancePortrait(base64Data, mimeType, masterStyle, backgroundStyle, detailLevel);
             setEnhancedImage(`data:${enhancedMimeType};base64,${enhancedBase64}`);
         } catch (err) {
             if (err instanceof Error) {
@@ -75,13 +73,13 @@ const App: React.FC = () => {
              setError("Failed to read the selected file.");
              setIsLoading(false);
         };
-    }, [backgroundStyle, detailLevel, masterStyle]);
+    }, [masterStyle, backgroundStyle, detailLevel]);
     
     const handleEnhanceAgain = useCallback(async () => {
         if (!originalImage || !originalMimeType) return;
         const base64Data = originalImage.split(',')[1];
         processImage(base64Data, originalMimeType);
-    }, [originalImage, originalMimeType, backgroundStyle, detailLevel, masterStyle]);
+    }, [originalImage, originalMimeType, masterStyle, backgroundStyle, detailLevel]);
 
     const handleStartOver = () => {
         setOriginalImage(null);
@@ -91,40 +89,39 @@ const App: React.FC = () => {
         setError(null);
         setIsLoading(false);
     };
-
-    const renderControls = () => (
-        <div className="w-full max-w-4xl mx-auto space-y-8 mt-4">
+    
+    const ControlsPanel = (
+        <div className="w-full max-w-4xl mx-auto my-8 p-6 bg-gray-800/50 border border-gray-700 rounded-lg space-y-8">
             <MasterStyleSelector selectedStyle={masterStyle} onStyleChange={setMasterStyle} />
             <BackgroundSelector selectedStyle={backgroundStyle} onStyleChange={setBackgroundStyle} />
-            <DetailSlider level={detailLevel} onLevelChange={setDetailLevel} />
+            <DetailSlider value={detailLevel} onChange={setDetailLevel} />
         </div>
     );
-    
-    const renderContent = () => {
-        if (!originalImage) {
-             return (
-                <>
-                    {renderControls()}
-                    <ImageUploader onImageSelect={handleImageSelect} isLoading={isLoading} />
-                </>
-            );
-        }
 
+    const renderContent = () => {
         if (isLoading) {
             return <Spinner />;
         }
 
         if (error) {
              return (
-                <>
+                <div className="max-w-4xl mx-auto text-center">
                     <p className="text-red-400 text-center my-8 font-sans bg-red-900/20 border border-red-500/30 p-4 rounded-md">{error}</p>
-                    {renderControls()}
-                    <div className="text-center mt-8">
+                    {originalImage && (
+                        <div className="w-full rounded-lg overflow-hidden shadow-lg bg-gray-800 border-2 border-red-500/30">
+                            <img src={originalImage} alt="Original portrait (failed to process)" className="object-contain w-full h-full max-h-[50vh]" />
+                        </div>
+                    )}
+                    <div className="text-center mt-8 space-x-4">
                         <button onClick={handleEnhanceAgain} disabled={isLoading} className="px-8 py-4 bg-gray-600 text-white font-sans font-semibold rounded-md hover:bg-gray-500 transition-colors">
                             Try Again
                         </button>
+                         <button onClick={handleStartOver} className="px-8 py-4 text-gray-400 font-sans font-semibold rounded-md hover:bg-white/5 transition-colors">
+                           Start Over
+                        </button>
                     </div>
-                </>
+                    {ControlsPanel}
+                </div>
             );
         }
 
@@ -132,7 +129,7 @@ const App: React.FC = () => {
             return (
                 <>
                     <ImageComparator originalImage={originalImage} enhancedImage={enhancedImage} />
-                    <div className="flex justify-center items-center gap-4 mt-6 mb-12">
+                    <div className="flex justify-center items-center gap-4 mt-6 mb-8">
                        {originalFileName && <DownloadButton imageUrl={enhancedImage} fileName={originalFileName} />}
                         <button onClick={handleEnhanceAgain} disabled={isLoading} className="px-8 py-4 bg-white/10 border border-white/20 text-white font-sans font-semibold rounded-md hover:bg-white/20 transition-colors">
                            Re-generate Style
@@ -141,12 +138,17 @@ const App: React.FC = () => {
                            Start Over
                         </button>
                     </div>
-                    {renderControls()}
+                    {ControlsPanel}
                 </>
             );
         }
         
-        return <Spinner />;
+        return (
+            <>
+                {ControlsPanel}
+                <ImageUploader onImageSelect={handleImageSelect} isLoading={isLoading} />
+            </>
+        );
     };
 
     return (
@@ -155,7 +157,8 @@ const App: React.FC = () => {
                 <Header />
                 {renderContent()}
             </main>
-            <footer className="text-center py-6 text-gray-600 text-sm">
+            <footer className="text-center py-6 text-gray-600 text-sm space-y-1">
+                <p>A Project by Benjamin Alex Kibira</p>
                 <p>Powered by Gemini AI | Designed for Portrait Artists</p>
             </footer>
         </div>
