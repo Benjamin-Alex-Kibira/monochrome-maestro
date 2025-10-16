@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
 // A utility function to convert a File object to a base64 string
 const fileToBase64 = (file: File): Promise<string> => {
@@ -66,6 +66,7 @@ interface EnhanceImageParams {
     detailLevel: number;
     backgroundStyle: string;
     addNegativeSpace: boolean;
+    maintainProps: boolean;
 }
 
 export const enhanceImage = async ({
@@ -74,6 +75,7 @@ export const enhanceImage = async ({
     detailLevel,
     backgroundStyle,
     addNegativeSpace,
+    maintainProps,
 }: EnhanceImageParams): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     const model = 'gemini-2.5-flash-image';
@@ -100,36 +102,54 @@ export const enhanceImage = async ({
         `;
     }
 
+    let contextInstruction = '';
+    if (maintainProps) {
+        contextInstruction = `
+**Step 1: Subject & Context Analysis (Chain-of-Thought)**
+- **1a. Identify Subject:** First, identify the primary human subject(s).
+- **1b. Analyze Pose & Contact:** Second, trace the subject's pose and their points of physical contact with their environment.
+- **1c. Identify Interactive Objects:** Third, identify any objects the subject is directly holding, wearing, or touching (e.g., a book, a hat, a musical instrument). These are essential props.
+- **1d. Identify Supporting Objects:** Fourth, identify any objects that are structurally essential for the subject's pose (e.g., the chair they are sitting on, the wall they are leaning against, the floor they are standing on). These are essential contextual surfaces.
+- **1e. Differentiate from Background:** Fifth, meticulously differentiate these essential props and surfaces from the general, non-interactive background. For example, if a person is sitting on a park bench, the bench is an essential contextual object, but the trees and sky behind them are the background to be removed.
+- **1f. Define the Composite Subject:** The human subject(s) PLUS these essential props and contextual surfaces are now considered the "composite subject" to be isolated.
+
+**Step 2: Background & Clutter Removal**
+- Meticulously remove EVERYTHING that is NOT part of the defined "composite subject".
+- The goal is to perfectly isolate the composite subject on a clean slate, ready for the new studio environment.
+        `;
+    } else {
+        contextInstruction = `
+**Step 1: Subject Analysis**
+- Critically analyze the input image to identify ONLY the primary human subject(s).
+
+**Step 2: Full Background & Prop Removal**
+- Meticulously remove EVERYTHING that is not the human subject. This includes all objects, props, chairs, tables, and the entire original background.
+- The goal is to perfectly isolate ONLY the human subject on a clean slate.
+        `;
+    }
+
     const prompt = `
 **Guiding Principle:**
-You are an expert photo retoucher and digital artist, acting as an assistant to a professional photographer. Your task is to enhance their portraits into high-end, black and white studio masterpieces by following a strict set of rules. Your primary goal is to assist, not to reimagine. The photographer's original composition and subject must be preserved with the utmost respect.
+You are an expert photo retoucher and digital artist, acting as an assistant to a professional photographer. Your task is to enhance their portraits into high-end, black and white studio masterpieces. While you have creative freedom, the subject's identity must be preserved with utmost respect.
 
-**FORBIDDEN ACTIONS - NON-NEGOTIABLE:**
-- DO NOT alter the subject's facial features, expression, or identity in any way. This is the most important rule.
-- DO NOT change the subject's pose, clothing, or physical characteristics.
-- DO NOT alter the original image's composition, framing, or aspect ratio. Preserve the photographer's shot style intent.
+**CORE RULE - NON-NEGOTIABLE:**
+- DO NOT alter the subject's facial features, expression, or identity in any way. The final portrait must be clearly recognizable as the same person from the original photograph. This is the most important rule.
 
 **ENHANCEMENT WORKFLOW:**
 
-**Step 1: Subject & Context Analysis**
-- Critically analyze the input image.
-- Identify the primary human subject(s).
-- Identify any objects the subject is directly interacting with (e.g., sitting on a chair, leaning on a table, holding a prop). These are considered part of the subject's context and MUST be preserved.
-
-**Step 2: Background & Clutter Removal**
-- This is a critical step. REMOVE EVERYTHING in the background that is not part of the subject's immediate context. This includes walls, floors, carpets, environmental textures, other furniture, and any form of visual clutter.
-- The goal is a clean slate, isolating the subject and their contextual objects.
+${contextInstruction}
 
 **Step 3: Studio Backdrop Creation**
-- Create a new, professional studio backdrop behind the isolated subject.
+- Create a new, professional studio backdrop behind the isolated composite subject.
 - The style of the backdrop is determined by the following user selection: "${backgroundInstruction}"
 
 **Step 4: Realistic Grounding & Shadow Generation**
 - Analyze the lighting on the subject from the original photograph to understand the direction and quality of the light sources.
-- Cast new, soft, physically realistic shadows from the subject and their contextual objects onto the new studio floor/backdrop. The shadows must be directionally accurate based on your lighting analysis. This grounds the subject in the new environment.
+- Cast new, soft, physically realistic shadows from the composite subject (person and props) onto the new studio floor/backdrop. The shadows must be directionally accurate based on your lighting analysis. This grounds the subject in the new environment.
 
 **Step 5: Master Style Application**
-- Apply the chosen master photographic style to the lighting and mood of the overall image.
+- Apply the chosen master photographic style to the lighting and mood of the entire composite subject.
+- Ensure the subject and their contextual objects are lit consistently and cohesively under this new style, making them feel naturally part of the same scene.
 - Instruction: "${masterStyleInstruction}"
 
 **Step 6: High-End Skin Retouching**
@@ -144,6 +164,25 @@ ${compositionalFramingInstruction}
 - DO NOT add any text, watermarks, or signatures.
     `;
 
+    const safetySettings = [
+        {
+            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+    ];
+
     try {
         const response = await ai.models.generateContent({
             model: model,
@@ -156,19 +195,42 @@ ${compositionalFramingInstruction}
             config: {
                 responseModalities: [Modality.IMAGE],
             },
+            safetySettings,
         });
 
-        for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData) {
-                const base64ImageBytes: string = part.inlineData.data;
-                const imageUrl = `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
-                return imageUrl;
+        const candidate = response.candidates?.[0];
+
+        // Happy path: Image data is present
+        if (candidate?.content?.parts) {
+            for (const part of candidate.content.parts) {
+                if (part.inlineData) {
+                    const base64ImageBytes: string = part.inlineData.data;
+                    const imageUrl = `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+                    return imageUrl;
+                }
             }
         }
-        throw new Error("No image was generated by the API.");
+
+        // Error diagnosis path
+        if (response.promptFeedback?.blockReason) {
+            // Prompt was blocked before generation
+            throw new Error(`Your request was blocked. Reason: ${response.promptFeedback.blockReason}. Please adjust your settings or try a different image.`);
+        }
+        
+        if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+            // Generation finished for a reason other than 'STOP' (e.g., SAFETY)
+            throw new Error(`Image generation failed. Reason: ${candidate.finishReason}. Please try a different image or adjust your settings.`);
+        }
+
+        // If we get here, the response was successful but contained no image, which is unexpected.
+        console.warn("Gemini API returned a successful response but no image data was found.", response);
+        throw new Error("The API returned an empty response. This could be a temporary issue. Please try again.");
 
     } catch (error) {
         console.error("Error calling Gemini API:", error);
-        throw new Error("Failed to enhance the image. Please try again.");
+        if (error instanceof Error) {
+             throw new Error(`Failed to enhance the image: ${error.message}`);
+        }
+        throw new Error("Failed to enhance the image due to an unknown error.");
     }
 };

@@ -8,6 +8,7 @@ import MasterStyleSelector from './components/MasterStyleSelector';
 import DetailSlider from './components/DetailSlider';
 import BackgroundSelector from './components/BackgroundSelector';
 import NegativeSpaceToggle from './components/NegativeSpaceToggle';
+import PropsToggle from './components/PropsToggle';
 import PreviewDisplay from './components/PreviewDisplay';
 import { enhanceImage } from './services/geminiService';
 import { resizeImage } from './services/imageService';
@@ -25,6 +26,7 @@ function App() {
     const [detailLevel, setDetailLevel] = useState(50);
     const [backgroundStyle, setBackgroundStyle] = useState('ai-choice');
     const [addNegativeSpace, setAddNegativeSpace] = useState(true);
+    const [maintainProps, setMaintainProps] = useState(true);
 
     useEffect(() => {
         const savedMasterStyle = localStorage.getItem('masterStyle');
@@ -39,12 +41,16 @@ function App() {
         const savedNegativeSpace = localStorage.getItem('addNegativeSpace');
         if (savedNegativeSpace) setAddNegativeSpace(JSON.parse(savedNegativeSpace));
 
+        const savedMaintainProps = localStorage.getItem('maintainProps');
+        if (savedMaintainProps) setMaintainProps(JSON.parse(savedMaintainProps));
+
     }, []);
 
     useEffect(() => { localStorage.setItem('masterStyle', masterStyle); }, [masterStyle]);
     useEffect(() => { localStorage.setItem('detailLevel', JSON.stringify(detailLevel)); }, [detailLevel]);
     useEffect(() => { localStorage.setItem('backgroundStyle', backgroundStyle); }, [backgroundStyle]);
     useEffect(() => { localStorage.setItem('addNegativeSpace', JSON.stringify(addNegativeSpace)); }, [addNegativeSpace]);
+    useEffect(() => { localStorage.setItem('maintainProps', JSON.stringify(maintainProps)); }, [maintainProps]);
 
 
     const resetState = useCallback(() => {
@@ -92,6 +98,7 @@ function App() {
                 detailLevel,
                 backgroundStyle,
                 addNegativeSpace,
+                maintainProps,
             });
             setEnhancedImageUrl(resultUrl);
         } catch (err: any) {
@@ -136,6 +143,7 @@ function App() {
                     <DetailSlider value={detailLevel} onChange={setDetailLevel} />
                     <BackgroundSelector selectedStyle={backgroundStyle} onStyleChange={setBackgroundStyle} />
                     <NegativeSpaceToggle enabled={addNegativeSpace} onChange={setAddNegativeSpace} isLoading={isLoading} />
+                    <PropsToggle enabled={maintainProps} onChange={setMaintainProps} isLoading={isLoading} />
                 </PreviewDisplay>
             );
         }
@@ -148,6 +156,7 @@ function App() {
                         <DetailSlider value={detailLevel} onChange={setDetailLevel} />
                         <BackgroundSelector selectedStyle={backgroundStyle} onStyleChange={setBackgroundStyle} />
                         <NegativeSpaceToggle enabled={addNegativeSpace} onChange={setAddNegativeSpace} isLoading={isBusy} />
+                        <PropsToggle enabled={maintainProps} onChange={setMaintainProps} isLoading={isBusy} />
                     </fieldset>
                 </div>
                 <ImageUploader onImageSelect={handleImageSelect} isLoading={isBusy} />
