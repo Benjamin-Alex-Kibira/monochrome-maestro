@@ -21,7 +21,7 @@ function App() {
     const [error, setError] = useState<string | null>(null);
 
     // Style and enhancement options state
-    const [masterStyle, setMasterStyle] = useState('default-gevurah');
+    const [masterStyle, setMasterStyle] = useState('maestro-signature');
     const [detailLevel, setDetailLevel] = useState(50);
     const [backgroundStyle, setBackgroundStyle] = useState('ai-choice');
     const [addNegativeSpace, setAddNegativeSpace] = useState(true);

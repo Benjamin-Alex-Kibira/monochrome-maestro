@@ -6,7 +6,7 @@ interface MasterStyleSelectorProps {
 }
 
 const styles = [
-    { id: 'default-gevurah', name: 'Gevurah Signature' },
+    { id: 'maestro-signature', name: 'Maestro Signature' },
     { id: 'richard-avedon', name: 'Richard Avedon' },
     { id: 'peter-lindbergh', name: 'Peter Lindbergh' },
 ];

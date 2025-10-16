@@ -41,7 +41,7 @@ const getMasterStyleInstruction = (style: string, detailLevel: number): string =
         case 'peter-lindbergh':
             styleInstruction = 'Apply a cinematic, narrative lighting style inspired by Peter Lindbergh. Use soft, natural-looking light sources. The mood should be soulful, authentic, and evocative, with rich mid-tones and a slightly raw feel.';
             break;
-        case 'default-gevurah':
+        case 'maestro-signature':
         default:
             styleInstruction = 'Apply a balanced, elegant, and timeless studio lighting setup. The lighting should be soft but directional, sculpting the subject\'s features gracefully. The mood is one of quiet confidence and sophistication.';
             break;
