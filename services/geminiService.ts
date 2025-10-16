@@ -15,7 +15,7 @@ const getBackgroundInstruction = (style: string): string => {
         case 'plain-light':
             return 'Create a clean, seamless, professional studio backdrop in a soft white or light grey. It should have subtle depth, not a flat digital white.';
         case 'plain-dark':
-            return 'Create a professional "studio dark" backdrop using deep charcoal tones. It must have a sense of depth and realism, emulating a physical backdrop. Avoid a flat, pure black digital background. Do not add any light gradients unless they are a natural result of the subject lighting.';
+            return 'Create a clean, seamless, professional studio backdrop in a deep charcoal or dark grey. It should have subtle depth, not a flat digital black.';
         case 'subtle-gradient':
             return 'Create a studio backdrop with a very gentle and smooth gradient, typically from a medium grey to a lighter or darker tone, to add depth and focus on the subject. The effect must be subtle and professional.';
         case 'textured-canvas':
