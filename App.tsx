@@ -10,12 +10,14 @@ import BackgroundSelector from './components/BackgroundSelector';
 import NegativeSpaceToggle from './components/NegativeSpaceToggle';
 import PreviewDisplay from './components/PreviewDisplay';
 import { enhanceImage } from './services/geminiService';
+import { resizeImage } from './services/imageService';
 
 function App() {
     const [originalImageFile, setOriginalImageFile] = useState<File | null>(null);
     const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
     const [enhancedImageUrl, setEnhancedImageUrl] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [isProcessingImage, setIsProcessingImage] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
     // Style and enhancement options state
@@ -50,14 +52,28 @@ function App() {
         setOriginalImageUrl(null);
         setEnhancedImageUrl(null);
         setIsLoading(false);
+        setIsProcessingImage(false);
         setError(null);
     }, []);
 
-    const handleImageSelect = (file: File) => {
-        setOriginalImageFile(file);
-        setOriginalImageUrl(URL.createObjectURL(file));
+    const handleImageSelect = async (file: File) => {
+        setOriginalImageFile(null);
+        setOriginalImageUrl(null);
         setEnhancedImageUrl(null); // Clear previous result
         setError(null);
+        setIsProcessingImage(true);
+
+        try {
+            const MAX_DIMENSION = 2048; // Resize for performance
+            const resizedFile = await resizeImage(file, MAX_DIMENSION);
+            setOriginalImageFile(resizedFile);
+            setOriginalImageUrl(URL.createObjectURL(resizedFile));
+        } catch (err: any) {
+            setError(err.message || 'An unknown error occurred while processing the image.');
+            console.error(err);
+        } finally {
+            setIsProcessingImage(false);
+        }
     };
 
     const handleGeneration = async () => {
@@ -85,6 +101,8 @@ function App() {
         }
     };
     
+    const isBusy = isLoading || isProcessingImage;
+
     const renderContent = () => {
         if (enhancedImageUrl && originalImageUrl) {
             return (
@@ -107,6 +125,10 @@ function App() {
              return <Spinner />;
         }
         
+        if (isProcessingImage) {
+            return <Spinner message="Preparing your image..." />;
+        }
+
         if (originalImageUrl) {
             return (
                 <PreviewDisplay imageUrl={originalImageUrl} onGenerate={handleGeneration} isGenerating={isLoading}>
@@ -121,12 +143,14 @@ function App() {
         return (
             <>
                 <div className="w-full max-w-3xl mx-auto my-8 flex flex-col gap-8">
-                    <MasterStyleSelector selectedStyle={masterStyle} onStyleChange={setMasterStyle} />
-                    <DetailSlider value={detailLevel} onChange={setDetailLevel} />
-                    <BackgroundSelector selectedStyle={backgroundStyle} onStyleChange={setBackgroundStyle} />
-                    <NegativeSpaceToggle enabled={addNegativeSpace} onChange={setAddNegativeSpace} isLoading={isLoading} />
+                     <fieldset disabled={isBusy} className={`flex flex-col gap-8 transition-opacity duration-300 ${isBusy ? 'opacity-50' : 'opacity-100'}`}>
+                        <MasterStyleSelector selectedStyle={masterStyle} onStyleChange={setMasterStyle} />
+                        <DetailSlider value={detailLevel} onChange={setDetailLevel} />
+                        <BackgroundSelector selectedStyle={backgroundStyle} onStyleChange={setBackgroundStyle} />
+                        <NegativeSpaceToggle enabled={addNegativeSpace} onChange={setAddNegativeSpace} isLoading={isBusy} />
+                    </fieldset>
                 </div>
-                <ImageUploader onImageSelect={handleImageSelect} isLoading={isLoading} />
+                <ImageUploader onImageSelect={handleImageSelect} isLoading={isBusy} />
             </>
         );
     };
