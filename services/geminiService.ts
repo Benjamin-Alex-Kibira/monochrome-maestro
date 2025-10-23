@@ -1,4 +1,5 @@
-import { GoogleGenAI, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI, Modality, HarmCategory, HarmBlockThreshold, Type } from "@google/genai";
+import { FaceBox } from "./imageService";
 
 // A utility function to convert a File object to a base64 string
 const fileToBase64 = (file: File): Promise<string> => {
@@ -91,20 +92,25 @@ export const enhanceImage = async ({
     const backgroundInstruction = getBackgroundInstruction(backgroundStyle);
     const masterStyleInstruction = getMasterStyleInstruction(masterStyle, detailLevel);
 
-    let stepCounter = 6;
+    let stepCounter = 3; // Start after context analysis and background removal
 
     let compositionalFramingInstruction = '';
     if (addNegativeSpace) {
         stepCounter++;
         compositionalFramingInstruction = `
-**Step ${stepCounter}: Compositional Framing & Authenticity**
-- Critically analyze the composition's negative space. If the subject is too close to the frame's edges, creating a cramped or unbalanced feel, intelligently expand the canvas to add "breathing room."
-- **Authenticity Mandate:** To ensure the final photograph feels authentic and not digitally manipulated, you must:
-    - **Analyze Source Image:** First, analyze the original, unedited areas of the portrait for its unique characteristics: film grain, digital noise, and subtle lens imperfections.
-    - **Replicate Characteristics:** Second, meticulously replicate these exact characteristics in any newly generated areas (the "breathing room"). The new space must not be perfectly clean; it must have the same texture and noise profile as the rest of the image.
-- The added space must seamlessly match the chosen background style (color, gradient, or texture), while also incorporating the replicated grain and noise.
-- This expansion should be just enough to achieve a professional, balanced composition. Do not alter the scale or content of the original image; only add new space around it.
-- This rule is for compositional balance, not for forcing a specific aspect ratio.
+**Step ${stepCounter}: Mandatory Compositional Framing**
+- Critically analyze the composition. If the subject is tightly cropped (e.g., head is closer than 10% of the image height to the top edge, or body is too close to side edges), you **MUST** expand the canvas to add "breathing room." This is not optional.
+- **Authenticity Mandate:** To ensure the final photograph feels authentic, you must:
+    - **Analyze Source Image:** First, analyze the original, unedited areas for unique characteristics: film grain, digital noise, and subtle lens imperfections.
+    - **Replicate Characteristics:** Second, meticulously replicate these exact characteristics in any newly generated areas. The new space must not be perfectly clean; it must match the original's texture and noise profile.
+- The added space must seamlessly match the chosen background style (color, gradient, or texture) while also incorporating the replicated grain and noise. This expansion should be just enough to achieve a professional, balanced composition.
+        `;
+    } else {
+        stepCounter++;
+        compositionalFramingInstruction = `
+**Step ${stepCounter}: Compositional Integrity**
+- You are strictly **FORBIDDEN** from altering the original image's crop, aspect ratio, or dimensions. 
+- All enhancements must occur *within* the original frame. Do not add any new canvas space. The original composition must be preserved exactly.
         `;
     }
 
@@ -112,44 +118,27 @@ export const enhanceImage = async ({
     if (maintainProps) {
         contextInstruction = `
 **Step 1: Subject & Context Analysis (Chain-of-Thought)**
-- **1a. Identify Subject:** First, identify the primary human subject(s).
-- **1b. Analyze Pose & Contact:** Second, trace the subject's pose and their points of physical contact with their environment.
-- **1c. Identify Interactive Objects:** Third, identify any objects the subject is directly holding, wearing, or touching (e.g., a book, a hat, a musical instrument). These are essential props.
-- **1d. Identify Supporting Objects:** Fourth, identify any objects that are structurally essential for the subject's pose (e.g., the chair they are sitting on, the wall they are leaning against, the floor they are standing on). These are essential contextual surfaces.
-- **1e. Differentiate from Background:** Fifth, meticulously differentiate these essential props and surfaces from the general, non-interactive background. For example, if a person is sitting on a park bench, the bench is an essential contextual object, but the trees and sky behind them are the background to be removed.
-- **1f. Define the Composite Subject:** The human subject(s) PLUS these essential props and contextual surfaces are now considered the "composite subject" to be isolated.
+- **1a. Identify Subject:** Identify the primary human subject(s).
+- **1b. Analyze Pose & Contact:** Trace the subject's pose and points of physical contact.
+- **1c. Identify Interactive Objects:** Identify any objects the subject is directly holding, wearing, or touching (e.g., a book, hat, instrument). These are essential props.
+- **1d. Identify Supporting Objects:** Identify objects structurally essential for the pose (e.g., the chair they sit on, the wall they lean against). These are essential surfaces.
+- **1e. Differentiate:** Meticulously differentiate these essential items from the general background.
+- **1f. Define the Composite Subject:** The human subject(s) PLUS these essential props and surfaces are the "composite subject". They are equally important and must be preserved with the same fidelity. Their removal is a failure of the task.
 
 **Step 2: Background & Clutter Removal**
-- Meticulously remove EVERYTHING that is NOT part of the defined "composite subject".
-- The goal is to perfectly isolate the composite subject on a clean slate, ready for the new studio environment.
+- Meticulously remove EVERYTHING that is NOT part of the defined "composite subject". The goal is to perfectly isolate the composite subject on a clean slate.
         `;
     } else {
         contextInstruction = `
-**Step 1: Subject Analysis**
-- Critically analyze the input image to identify ONLY the primary human subject(s).
+**Step 1: Aggressive Subject Isolation**
+- Your ONLY task in this step is to isolate the primary human subject(s).
+- Meticulously and aggressively remove EVERYTHING else. This includes all props (even if held, like a book or phone), all accessories not permanently attached to the body (like hats or scarves, but not prescription glasses), all furniture (chairs, tables), and the entire original background.
+- The result of this step must be the human form, and only the human form, on a clean slate.
 
-**Step 2: Full Background & Prop Removal**
-- Meticulously remove EVERYTHING that is not the human subject. This includes all objects, props, chairs, tables, and the entire original background.
-- The goal is to perfectly isolate ONLY the human subject on a clean slate.
+**Step 2: Background Removal (Confirmation)**
+- This step is a confirmation. Ensure the background is completely gone and only the isolated human remains.
         `;
     }
-
-    stepCounter++;
-    const selfCorrectionInstruction = `
-**Step ${stepCounter}: Pre-Flight Check (Self-Correction)**
-- **CRITICAL:** Before generating the final image, perform a self-correction check.
-- Compare the enhanced subject's facial features and structure directly against the original input image.
-- If you detect any deviation, distortion, or loss of likeness, you MUST undo the last change and re-apply the lighting and retouching effects with less intensity until the subject's identity is perfectly preserved.
-    `;
-
-    stepCounter++;
-    const finalGenerationInstruction = `
-**Step ${stepCounter}: Final Image Generation**
-- Synthesize all the previous steps into a single, cohesive, gallery-print quality black and white photograph.
-- The final image must be high-resolution (target 4096px), free of digital artifacts, and appear as if captured in a professional studio.
-- Ensure all rules, especially the Identity Preservation Mandate, have been followed.
-- Generate only the final image, with no additional text, watermarks, or signatures.
-    `;
 
     const prompt = `
 **Guiding Principle:**
@@ -165,16 +154,16 @@ You are an expert photo retoucher and digital artist, acting as an assistant to 
 ${contextInstruction}
 
 **Step 3: Studio Backdrop Creation**
-- Create a new, professional studio backdrop behind the isolated composite subject.
+- Create a new, professional studio backdrop behind the isolated subject/composite subject.
 - The style of the backdrop is determined by the following user selection: "${backgroundInstruction}"
 
 **Step 4: Realistic Grounding & Shadow Generation**
 - Analyze the lighting on the subject from the original photograph to understand the direction and quality of the light sources.
-- Cast new, soft, physically realistic shadows from the composite subject (person and props) onto the new studio floor/backdrop. The shadows must be directionally accurate based on your lighting analysis. This grounds the subject in the new environment.
+- Cast new, soft, physically realistic shadows from the subject/composite subject onto the new studio floor/backdrop. The shadows must be directionally accurate based on your lighting analysis. This grounds the subject in the new environment.
 
 **Step 5: Master Style Application**
-- Apply the chosen master photographic style to the lighting and mood of the entire composite subject.
-- Ensure the subject and their contextual objects are lit consistently and cohesively under this new style, making them feel naturally part of the same scene.
+- Apply the chosen master photographic style to the lighting and mood of the entire subject/composite subject.
+- Ensure all elements are lit consistently and cohesively under this new style.
 - Instruction: "${masterStyleInstruction}"
 
 **Step 6: High-End Skin Retouching**
@@ -182,9 +171,16 @@ ${contextInstruction}
 
 ${compositionalFramingInstruction}
 
-${selfCorrectionInstruction}
+**Step ${stepCounter + 1}: Pre-Flight Check (Self-Correction)**
+- **CRITICAL:** Before generating the final image, perform a self-correction check.
+- Compare the enhanced subject's facial features and structure directly against the original input image.
+- If you detect any deviation, distortion, or loss of likeness, you MUST undo the last change and re-apply the lighting and retouching effects with less intensity until the subject's identity is perfectly preserved.
 
-${finalGenerationInstruction}
+**Step ${stepCounter + 2}: Final Image Generation**
+- Synthesize all the previous steps into a single, cohesive, gallery-print quality black and white photograph.
+- The final image must be high-resolution (target 4096px), free of digital artifacts, and appear as if captured in a professional studio.
+- Ensure all rules, especially the Identity Preservation Mandate, have been followed.
+- Generate only the final image, with no additional text, watermarks, or signatures.
     `;
 
     const safetySettings = [
@@ -258,68 +254,84 @@ ${finalGenerationInstruction}
     }
 };
 
-interface RefineImageParams {
-    imageFile: File;
+interface RefineImageWithContextParams {
+    targetImageFile: File;
+    referenceImageFiles: File[];
     prompt: string;
 }
 
-export const refineImage = async ({
-    imageFile,
+export const refineImageWithContext = async ({
+    targetImageFile,
+    referenceImageFiles,
     prompt: userPrompt,
-}: RefineImageParams): Promise<string> => {
+}: RefineImageWithContextParams): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     const model = 'gemini-2.5-flash-image';
 
-    const base64Data = await fileToBase64(imageFile);
-    const imagePart = {
+    const base64Target = await fileToBase64(targetImageFile);
+    const parts: any[] = [{
         inlineData: {
-            data: base64Data,
-            mimeType: imageFile.type,
+            data: base64Target,
+            mimeType: targetImageFile.type,
         },
-    };
+    }];
+
+    for (const file of referenceImageFiles) {
+        const base64Ref = await fileToBase64(file);
+        parts.push({
+            inlineData: {
+                data: base64Ref,
+                mimeType: file.type,
+            },
+        });
+    }
+    
+    let referenceInstruction = '';
+    if (referenceImageFiles.length > 0) {
+        referenceInstruction = `2.  **Reference Images:** All subsequent images are provided as visual context. Use them to intelligently complete missing areas in the first image if they are visible in the reference photos.`;
+    }
 
     const prompt = `
 **Guiding Principle:**
-You are an expert photo retoucher and digital artist. The user has provided a black and white studio portrait they created. Your task is to apply the following edit based on their text instruction, while maintaining the overall high-end quality and photographic style.
+You are an expert photo retoucher and digital artist. Your task is to perform a specific edit on the *first* image provided, based on the user's text instructions.
 
-**CORE RULE - NON-NEGOTIABLE:**
-- DO NOT alter the subject's facial features, expression, identity, or posture in any way. The final portrait must be clearly recognizable as the same person from the original photograph. This is the most important rule.
+**Identity Preservation Mandate (ABSOLUTE PRIORITY):**
+- The subject's identity is SACROSANCT. You MUST NOT alter the subject's facial features (eyes, nose, mouth, facial structure), expression, identity, or body posture, unless explicitly and safely requested by the user's prompt (e.g., "close their eyes").
 
-**User's Refinement Instruction:**
-"${userPrompt}"
+**Input Analysis:**
+1.  **Primary Image:** The very first image in the input is the target image to be edited. All edits apply only to this image.
+${referenceInstruction}
+3.  **User's Goal:** The user wants to achieve the following: "${userPrompt}"
+
+**Execution Workflow:**
+- **If the user's request involves completing missing parts of the primary image (e.g., "add the top of their head," "fix the cropped shoulder"):**
+    - Meticulously analyze the reference images to find the missing visual information.
+    - If the information is present in the reference images, use it to seamlessly reconstruct the missing area in the primary image.
+    - The reconstruction must perfectly match the lighting, texture, style, and quality of the primary image.
+    - **Crucial Constraint:** Do not invent details. If the missing part is not clearly visible in any of the reference images, do not attempt to fill it in.
+- **If the user's request is a stylistic change (e.g., "add more film grain," "make the shadows deeper"):**
+    - Apply this stylistic change to the primary image. The reference images should be ignored for this type of task.
+- **For all requests:**
+    - The final output must be a photograph.
+    - Preserve the high-end, professional quality of the original black and white portrait.
 
 **Final Instruction:**
-Apply this change subtly and professionally. Generate only the final, edited image, with no additional text, watermarks, or signatures. The output must be a high-resolution, photographic image.
+- Generate only the final, edited version of the *first* image. Do not include text, watermarks, or signatures.
     `;
+    
+    parts.push({ text: prompt });
 
     const safetySettings = [
-        {
-            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
-        },
-        {
-            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
-        },
-        {
-            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
-        },
-        {
-            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-            threshold: HarmBlockThreshold.BLOCK_NONE,
-        },
+        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
     ];
 
     try {
         const response = await ai.models.generateContent({
             model: model,
-            contents: {
-                parts: [
-                    imagePart,
-                    { text: prompt },
-                ],
-            },
+            contents: { parts },
             config: {
                 responseModalities: [Modality.IMAGE],
             },
@@ -358,66 +370,59 @@ Apply this change subtly and professionally. Generate only the final, edited ima
     }
 };
 
-interface GenerateRefinedPromptParams {
-    imageFile: File;
-    prompt: string;
-}
-
-export const generateRefinedPrompt = async ({
-    imageFile,
-    prompt: userPrompt,
-}: GenerateRefinedPromptParams): Promise<string> => {
+export const detectFaces = async (imageFile: File): Promise<FaceBox[]> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-    
+    const model = 'gemini-2.5-pro';
+
     const base64Data = await fileToBase64(imageFile);
     const imagePart = {
-        inlineData: {
-            data: base64Data,
-            mimeType: imageFile.type,
-        },
+        inlineData: { data: base64Data, mimeType: imageFile.type },
     };
 
-    const systemInstruction = `You are a world-class photographic prompt engineer. Your task is to take a user's simple, conversational request for an image edit and expand it into a detailed, professional, and actionable prompt for an image generation AI.
+    const prompt = `
+Analyze the provided image and identify all human faces.
+For each face detected, provide a bounding box with its coordinates.
+The coordinates must be relative to the image dimensions (from 0.0 to 1.0).
+The bounding box should be defined by the top-left corner (x, y) and its width and height.
+Return the data as a JSON object that adheres to the provided schema.
+If no human faces are found, return a JSON object with an empty "faces" array.
+`;
 
-The image generation AI you are writing for is an expert photo retoucher. It understands photographic terms (e.g., lighting, composition, film stock, color grading, texture).
-
-**Your Process:**
-1.  **Analyze the Image:** Look at the provided black and white portrait. Understand its current style, lighting, and composition.
-2.  **Analyze the User Request:** Understand the user's intent, even if it's simple (e.g., "make it moody," "add a retro filter").
-3.  **Synthesize and Expand:** Combine your analysis into a new, detailed prompt.
-    *   Translate vague terms into specific instructions. "Moody" could become "deepen the shadows, add a subtle vignette, and enhance the contrast in the mid-tones to create a dramatic, chiaroscuro effect."
-    *   "Retro filter" could become "apply a subtle sepia tone, introduce a fine-grained film texture reminiscent of Kodak Tri-X 400, and slightly soften the highlights to emulate a vintage silver gelatin print."
-    *   Be creative and descriptive.
-4.  **Preserve Core Rules:** Remind the AI to preserve the subject's identity, features, and pose. This is critical.
-
-**Output Format:**
-- Your output MUST be ONLY the new, detailed prompt text. Do not include any other explanations, greetings, or markdown formatting. Just the raw text for the next AI.`;
-
-    const contents = {
-        parts: [
-            imagePart,
-            { text: `Here is the user's request: "${userPrompt}"` },
-        ],
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            faces: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        x: { type: Type.NUMBER, description: 'The x-coordinate of the top-left corner.' },
+                        y: { type: Type.NUMBER, description: 'The y-coordinate of the top-left corner.' },
+                        width: { type: Type.NUMBER, description: 'The width of the bounding box.' },
+                        height: { type: Type.NUMBER, description: 'The height of the bounding box.' },
+                    },
+                    required: ['x', 'y', 'width', 'height'],
+                },
+            },
+        },
+        required: ['faces'],
     };
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
-            contents: contents,
+            model: model,
+            contents: { parts: [imagePart, { text: prompt }] },
             config: {
-                systemInstruction: systemInstruction,
-                thinkingConfig: {
-                    thinkingBudget: 32768,
-                },
+                responseMimeType: "application/json",
+                responseSchema: responseSchema,
             },
         });
-
-        return response.text.trim();
+        
+        const jsonText = response.text.trim();
+        const result = JSON.parse(jsonText);
+        return result.faces || [];
     } catch (error) {
-        console.error("Error generating refined prompt with gemini-2.5-pro:", error);
-        if (error instanceof Error) {
-            throw new Error(`The advanced model failed to process your request: ${error.message}`);
-        }
-        throw new Error("The advanced model failed to process your request due to an unknown error.");
+        console.error("Error detecting faces:", error);
+        throw new Error("Could not detect faces in the image.");
     }
 };

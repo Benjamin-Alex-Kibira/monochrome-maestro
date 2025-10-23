@@ -9,15 +9,27 @@ import DetailSlider from './components/DetailSlider';
 import BackgroundSelector from './components/BackgroundSelector';
 import NegativeSpaceToggle from './components/NegativeSpaceToggle';
 import PropsToggle from './components/PropsToggle';
-import { enhanceImage, refineImage, generateRefinedPrompt } from './services/geminiService';
-import { resizeImage, dataUrlToFile } from './services/imageService';
+import { enhanceImage, refineImageWithContext, detectFaces } from './services/geminiService';
+import { resizeImage, dataUrlToFile, cropImage, FaceBox } from './services/imageService';
+import DownloadIcon from './components/icons/DownloadIcon';
+import SparklesIcon from './components/icons/SparklesIcon';
+import RefinementModal from './components/RefinementModal';
+import ImagePreviewCard from './components/ImagePreviewCard';
 
-interface ImageJob {
+export interface ImageJob {
     id: string;
     file: File;
     originalUrl: string;
+    displayUrl: string;
+
+    // Face Detection & Cropping
+    faces: FaceBox[];
+    selectedFaceIndex: number | null;
+    cropFile: File | null;
+    
+    // Enhancement
     enhancedUrl: string | null;
-    status: 'pending' | 'processing' | 'done' | 'error';
+    status: 'detecting' | 'selection_needed' | 'ready' | 'processing' | 'done' | 'error';
     error?: string;
 }
 
@@ -26,6 +38,10 @@ function App() {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [loadingMessage, setLoadingMessage] = useState<string>("Crafting your masterpieces...");
     const [error, setError] = useState<string | null>(null);
+
+    // Refinement state
+    const [refiningJob, setRefiningJob] = useState<ImageJob | null>(null);
+    const [isRefining, setIsRefining] = useState(false);
 
     // Style and enhancement options state
     const [masterStyle, setMasterStyle] = useState('maestro-signature');
@@ -59,7 +75,12 @@ function App() {
     useEffect(() => { localStorage.setItem('maintainProps', JSON.stringify(maintainProps)); }, [maintainProps]);
 
     const resetState = useCallback(() => {
-        imageJobs.forEach(job => URL.revokeObjectURL(job.originalUrl));
+        imageJobs.forEach(job => {
+            URL.revokeObjectURL(job.originalUrl)
+            if (job.displayUrl !== job.originalUrl) {
+                URL.revokeObjectURL(job.displayUrl);
+            }
+        });
         setImageJobs([]);
         setIsLoading(false);
         setError(null);
@@ -72,27 +93,74 @@ function App() {
         setLoadingMessage(`Preparing ${files.length} image(s)...`);
 
         try {
-            const MAX_DIMENSION = 2048; // Resize for performance
+            const MAX_DIMENSION = 3072;
             const resizePromises = files.map(file => resizeImage(file, MAX_DIMENSION));
             const resizedFiles = await Promise.all(resizePromises);
 
-            const newJobs: ImageJob[] = resizedFiles.map((file, index) => ({
-                id: `${file.name}-${index}-${Date.now()}`,
-                file: file,
-                originalUrl: URL.createObjectURL(file),
-                enhancedUrl: null,
-                status: 'pending',
-            }));
-            setImageJobs(newJobs);
+            const initialJobs: ImageJob[] = resizedFiles.map((file, index) => {
+                const originalUrl = URL.createObjectURL(file);
+                return {
+                    id: `${file.name}-${index}-${Date.now()}`,
+                    file: file,
+                    originalUrl: originalUrl,
+                    displayUrl: originalUrl,
+                    faces: [],
+                    selectedFaceIndex: null,
+                    cropFile: file,
+                    enhancedUrl: null,
+                    status: 'detecting',
+                };
+            });
+            setImageJobs(initialJobs);
+            setIsLoading(false);
+
+            // Asynchronously detect faces and auto-crop
+            initialJobs.forEach(async (job) => {
+                try {
+                    const faces = await detectFaces(job.file);
+                    
+                    if (faces.length === 1) { // Auto-crop if one face is found
+                        const croppedFile = await cropImage(job.file, faces[0]);
+                        const displayUrl = URL.createObjectURL(croppedFile);
+                        setImageJobs(prev => prev.map(j => j.id === job.id ? { ...j, faces, selectedFaceIndex: 0, cropFile: croppedFile, displayUrl, status: 'ready' } : j));
+                    } else if (faces.length > 1) { // Needs user selection
+                        setImageJobs(prev => prev.map(j => j.id === job.id ? { ...j, faces, status: 'selection_needed' } : j));
+                    } else { // No faces found, it's ready
+                        setImageJobs(prev => prev.map(j => j.id === job.id ? { ...j, faces, status: 'ready' } : j));
+                    }
+                } catch (err) {
+                    console.error(`Face detection failed for ${job.file.name}:`, err);
+                    setImageJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'error', error: 'Face detection failed.' } : j));
+                }
+            });
 
         } catch (err: any) {
             setError(err.message || 'An unknown error occurred while processing the images.');
             console.error(err);
-        } finally {
             setIsLoading(false);
-            setLoadingMessage("Crafting your masterpieces...");
         }
     };
+
+    const handleFaceSelect = async (jobId: string, faceIndex: number) => {
+        const job = imageJobs.find(j => j.id === jobId);
+        if (!job) return;
+
+        try {
+            const croppedFile = await cropImage(job.file, job.faces[faceIndex]);
+            const displayUrl = URL.createObjectURL(croppedFile);
+
+            // Revoke old URL if it was a temporary crop
+            if (job.displayUrl !== job.originalUrl) {
+                URL.revokeObjectURL(job.displayUrl);
+            }
+            
+            setImageJobs(prev => prev.map(j => j.id === jobId ? { ...j, selectedFaceIndex: faceIndex, cropFile: croppedFile, displayUrl, status: 'ready' } : j));
+        } catch (err) {
+            console.error(`Failed to crop image ${job.file.name}:`, err);
+             setImageJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'error', error: 'Image cropping failed.' } : j));
+        }
+    };
+
 
     const handleBatchGeneration = async () => {
         if (imageJobs.length === 0) {
@@ -103,7 +171,7 @@ function App() {
         setIsLoading(true);
         setError(null);
     
-        const jobsToProcess = imageJobs.filter(job => job.status === 'pending' || job.status === 'error');
+        const jobsToProcess = imageJobs.filter(job => job.status === 'ready' || job.status === 'error');
 
         for (let i = 0; i < jobsToProcess.length; i++) {
             const currentJob = jobsToProcess[i];
@@ -114,8 +182,12 @@ function App() {
             ));
 
             try {
+                if (!currentJob.cropFile) {
+                    throw new Error("Image not ready for processing.");
+                }
+
                 const resultUrl = await enhanceImage({
-                    imageFile: currentJob.file,
+                    imageFile: currentJob.cropFile,
                     masterStyle,
                     detailLevel,
                     backgroundStyle,
@@ -139,12 +211,82 @@ function App() {
         setLoadingMessage("Crafting your masterpieces...");
     };
 
+    const handleRefineImage = async (
+        targetJobId: string,
+        prompt: string,
+        referenceJobIds: string[]
+    ) => {
+        const targetJob = imageJobs.find(job => job.id === targetJobId);
+        if (!targetJob || !targetJob.enhancedUrl) {
+            setError("Target image for refinement not found.");
+            return;
+        }
+
+        setIsRefining(true);
+        setError(null);
+
+        try {
+            const targetImageFile = await dataUrlToFile(targetJob.enhancedUrl, targetJob.file.name);
+            const referenceImageFiles = await Promise.all(
+                imageJobs
+                    .filter(job => referenceJobIds.includes(job.id) && job.enhancedUrl)
+                    .map(job => dataUrlToFile(job.enhancedUrl!, job.file.name))
+            );
+
+            const resultUrl = await refineImageWithContext({
+                targetImageFile,
+                referenceImageFiles,
+                prompt,
+            });
+
+            const refinedFile = await dataUrlToFile(resultUrl, `refined-${targetJob.file.name}`);
+
+            setImageJobs(prevJobs => prevJobs.map(job =>
+                job.id === targetJobId ? { ...job, enhancedUrl: resultUrl, file: refinedFile } : job
+            ));
+
+        } catch (err: any) {
+            setError(err.message || 'An unknown error occurred during refinement.');
+            console.error(err);
+        } finally {
+            setIsRefining(false);
+            setRefiningJob(null);
+        }
+    };
+
+    const handleDownloadAll = () => {
+        const successfulJobs = imageJobs.filter(job => job.status === 'done' && job.enhancedUrl);
+        successfulJobs.forEach(job => {
+             const link = document.createElement('a');
+            link.href = job.enhancedUrl!;
+            
+            const nameParts = job.file.name.split('.');
+            nameParts.pop();
+            const baseName = nameParts.join('.');
+            
+            const mimeType = job.enhancedUrl!.substring(job.enhancedUrl!.indexOf(':') + 1, job.enhancedUrl!.indexOf(';'));
+            let extension = 'png';
+            if (mimeType === 'image/jpeg') {
+                extension = 'jpg';
+            } else if (mimeType === 'image/webp') {
+                extension = 'webp';
+            }
+            
+            link.download = `${baseName}-monochrome.${extension}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    };
+
     const renderContent = () => {
-        if (isLoading) {
+        if (isLoading && imageJobs.length === 0) {
             return <Spinner message={loadingMessage} />;
         }
 
-        const hasResults = imageJobs.some(job => job.status === 'done' || job.status === 'error');
+        const successfulJobs = imageJobs.filter(job => job.status === 'done');
+        const hasResults = imageJobs.some(job => job.status === 'done' || job.status === 'error' && job.faces.length === 0);
+        const allJobsReadyForProcessing = imageJobs.every(job => job.status === 'ready' || job.status === 'error');
 
         if (hasResults) {
             return (
@@ -155,8 +297,15 @@ function App() {
                                 {job.status === 'done' && job.enhancedUrl ? (
                                     <>
                                         <ImageComparator originalImage={job.originalUrl} enhancedImage={job.enhancedUrl} />
-                                        <div className="text-center mt-4">
+                                        <div className="text-center mt-4 flex items-center justify-center gap-4">
                                             <DownloadButton imageUrl={job.enhancedUrl} fileName={job.file.name} />
+                                             <button
+                                                onClick={() => setRefiningJob(job)}
+                                                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gray-700 text-gray-200 font-sans font-semibold rounded-md border border-gray-600 hover:bg-gray-600 hover:text-white transition-all duration-300 transform hover:scale-105"
+                                            >
+                                                <SparklesIcon className="w-5 h-5" />
+                                                Refine
+                                            </button>
                                         </div>
                                     </>
                                 ) : job.status === 'error' ? (
@@ -181,6 +330,15 @@ function App() {
                         >
                             Create Another Batch
                         </button>
+                        {successfulJobs.length > 0 && (
+                             <button
+                                onClick={handleDownloadAll}
+                                className="inline-flex items-center justify-center gap-3 px-8 py-4 bg-white text-gray-900 font-sans font-semibold rounded-md shadow-lg hover:bg-gray-200 transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-white"
+                            >
+                                <DownloadIcon className="w-5 h-5" />
+                                {`Download All (${successfulJobs.length})`}
+                            </button>
+                        )}
                     </div>
                 </div>
             );
@@ -199,10 +357,11 @@ function App() {
                             <div className="text-center mt-4 flex flex-col sm:flex-row gap-4 justify-center">
                                 <button
                                     onClick={handleBatchGeneration}
-                                    disabled={isLoading}
+                                    disabled={isLoading || !allJobsReadyForProcessing}
                                     className="px-12 py-4 bg-gray-200 text-gray-900 font-sans font-bold text-lg rounded-md shadow-lg hover:bg-white transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-white disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
+                                    title={!allJobsReadyForProcessing ? "Please select a face for all images with multiple options." : ""}
                                 >
-                                    {`Create ${imageJobs.length} Masterpiece(s)`}
+                                    {isLoading ? 'Processing...' : `Create ${imageJobs.length} Masterpiece(s)`}
                                 </button>
                                 <button
                                     onClick={resetState}
@@ -212,11 +371,11 @@ function App() {
                                 </button>
                             </div>
                         </div>
-                         <div className="flex flex-col items-center">
-                            <h3 className="font-serif text-2xl text-gray-400 mb-4">Your Portraits ({imageJobs.length})</h3>
-                            <div className="w-full max-h-[80vh] overflow-y-auto bg-gray-800 rounded-lg p-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+                         <div className="flex flex-col">
+                            <h3 className="font-serif text-2xl text-gray-400 mb-4 text-center lg:text-left">Your Portraits ({imageJobs.length})</h3>
+                            <div className="w-full max-h-[80vh] overflow-y-auto bg-gray-900/50 rounded-lg p-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
                                 {imageJobs.map(job => (
-                                    <img key={job.id} src={job.originalUrl} alt={job.file.name} className="object-cover w-full aspect-square rounded-md shadow-lg" />
+                                    <ImagePreviewCard key={job.id} job={job} onFaceSelect={handleFaceSelect} />
                                 ))}
                             </div>
                         </div>
@@ -251,6 +410,15 @@ function App() {
                     </div>
                 )}
                 {renderContent()}
+                {refiningJob && (
+                    <RefinementModal
+                        job={refiningJob}
+                        allJobs={imageJobs.filter(j => j.status === 'done' && j.id !== refiningJob!.id)}
+                        onClose={() => setRefiningJob(null)}
+                        onRefine={handleRefineImage}
+                        isRefining={isRefining}
+                    />
+                )}
             </main>
         </div>
     );
