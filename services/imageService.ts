@@ -32,7 +32,7 @@ export const resizeImage = (file: File, maxDimension: number): Promise<File> => 
                 ctx.drawImage(img, 0, 0, width, height);
                 
                 const mimeType = 'image/jpeg';
-                const quality = 0.9;
+                const quality = 0.95;
 
                 canvas.toBlob((blob) => {
                     if (!blob) {
@@ -50,4 +50,14 @@ export const resizeImage = (file: File, maxDimension: number): Promise<File> => 
         };
         reader.onerror = (err) => reject(new Error('File reader failed.'));
     });
+};
+
+export const dataUrlToFile = async (dataUrl: string, filename: string): Promise<File> => {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const mimeType = blob.type;
+    const extension = mimeType.split('/')[1] || 'png';
+    const baseName = filename.substring(0, filename.lastIndexOf('.')) || filename;
+    const newFilename = `${baseName}.${extension}`;
+    return new File([blob], newFilename, { type: mimeType });
 };

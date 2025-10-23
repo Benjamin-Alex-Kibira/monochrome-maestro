@@ -91,12 +91,18 @@ export const enhanceImage = async ({
     const backgroundInstruction = getBackgroundInstruction(backgroundStyle);
     const masterStyleInstruction = getMasterStyleInstruction(masterStyle, detailLevel);
 
+    let stepCounter = 6;
+
     let compositionalFramingInstruction = '';
     if (addNegativeSpace) {
+        stepCounter++;
         compositionalFramingInstruction = `
-**Step 7: Compositional Framing**
+**Step ${stepCounter}: Compositional Framing & Authenticity**
 - Critically analyze the composition's negative space. If the subject is too close to the frame's edges, creating a cramped or unbalanced feel, intelligently expand the canvas to add "breathing room."
-- The added space must seamlessly match the chosen background style (color, gradient, or texture).
+- **Authenticity Mandate:** To ensure the final photograph feels authentic and not digitally manipulated, you must:
+    - **Analyze Source Image:** First, analyze the original, unedited areas of the portrait for its unique characteristics: film grain, digital noise, and subtle lens imperfections.
+    - **Replicate Characteristics:** Second, meticulously replicate these exact characteristics in any newly generated areas (the "breathing room"). The new space must not be perfectly clean; it must have the same texture and noise profile as the rest of the image.
+- The added space must seamlessly match the chosen background style (color, gradient, or texture), while also incorporating the replicated grain and noise.
 - This expansion should be just enough to achieve a professional, balanced composition. Do not alter the scale or content of the original image; only add new space around it.
 - This rule is for compositional balance, not for forcing a specific aspect ratio.
         `;
@@ -128,12 +134,31 @@ export const enhanceImage = async ({
         `;
     }
 
+    stepCounter++;
+    const selfCorrectionInstruction = `
+**Step ${stepCounter}: Pre-Flight Check (Self-Correction)**
+- **CRITICAL:** Before generating the final image, perform a self-correction check.
+- Compare the enhanced subject's facial features and structure directly against the original input image.
+- If you detect any deviation, distortion, or loss of likeness, you MUST undo the last change and re-apply the lighting and retouching effects with less intensity until the subject's identity is perfectly preserved.
+    `;
+
+    stepCounter++;
+    const finalGenerationInstruction = `
+**Step ${stepCounter}: Final Image Generation**
+- Synthesize all the previous steps into a single, cohesive, gallery-print quality black and white photograph.
+- The final image must be high-resolution (target 4096px), free of digital artifacts, and appear as if captured in a professional studio.
+- Ensure all rules, especially the Identity Preservation Mandate, have been followed.
+- Generate only the final image, with no additional text, watermarks, or signatures.
+    `;
+
     const prompt = `
 **Guiding Principle:**
-You are an expert photo retoucher and digital artist, acting as an assistant to a professional photographer. Your task is to enhance their portraits into high-end, black and white studio masterpieces. While you have creative freedom, the subject's identity must be preserved with utmost respect.
+You are an expert photo retoucher and digital artist, acting as an assistant to a professional photographer. Your task is to enhance their portraits into high-end, black and white studio masterpieces.
 
-**CORE RULE - NON-NEGOTIABLE:**
-- DO NOT alter the subject's facial features, expression, or identity in any way. The final portrait must be clearly recognizable as the same person from the original photograph. This is the most important rule.
+**Identity Preservation Mandate (ABSOLUTE PRIORITY):**
+- The subject's identity is SACROSANCT. You MUST NOT alter the subject's facial features (eyes, nose, mouth, facial structure), expression, identity, or body posture.
+- The final portrait MUST be instantly recognizable as the same person from the original photograph, in the exact same pose.
+- Any enhancement that compromises recognizability is a failure. This rule overrides all other stylistic instructions.
 
 **ENHANCEMENT WORKFLOW:**
 
@@ -157,11 +182,9 @@ ${contextInstruction}
 
 ${compositionalFramingInstruction}
 
-**FINAL QUALITY MANDATE:**
-- The final output must be a gallery-print quality, high-resolution (target 4096px) black and white photograph.
-- There must be zero digital artifacts, blurriness, or pixelation.
-- The final image must look like it was captured in a professional international photo studio.
-- DO NOT add any text, watermarks, or signatures.
+${selfCorrectionInstruction}
+
+${finalGenerationInstruction}
     `;
 
     const safetySettings = [
@@ -232,5 +255,169 @@ ${compositionalFramingInstruction}
              throw new Error(`Failed to enhance the image: ${error.message}`);
         }
         throw new Error("Failed to enhance the image due to an unknown error.");
+    }
+};
+
+interface RefineImageParams {
+    imageFile: File;
+    prompt: string;
+}
+
+export const refineImage = async ({
+    imageFile,
+    prompt: userPrompt,
+}: RefineImageParams): Promise<string> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    const model = 'gemini-2.5-flash-image';
+
+    const base64Data = await fileToBase64(imageFile);
+    const imagePart = {
+        inlineData: {
+            data: base64Data,
+            mimeType: imageFile.type,
+        },
+    };
+
+    const prompt = `
+**Guiding Principle:**
+You are an expert photo retoucher and digital artist. The user has provided a black and white studio portrait they created. Your task is to apply the following edit based on their text instruction, while maintaining the overall high-end quality and photographic style.
+
+**CORE RULE - NON-NEGOTIABLE:**
+- DO NOT alter the subject's facial features, expression, identity, or posture in any way. The final portrait must be clearly recognizable as the same person from the original photograph. This is the most important rule.
+
+**User's Refinement Instruction:**
+"${userPrompt}"
+
+**Final Instruction:**
+Apply this change subtly and professionally. Generate only the final, edited image, with no additional text, watermarks, or signatures. The output must be a high-resolution, photographic image.
+    `;
+
+    const safetySettings = [
+        {
+            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+    ];
+
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: {
+                parts: [
+                    imagePart,
+                    { text: prompt },
+                ],
+            },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+            safetySettings,
+        });
+
+        const candidate = response.candidates?.[0];
+
+        if (candidate?.content?.parts) {
+            for (const part of candidate.content.parts) {
+                if (part.inlineData) {
+                    const base64ImageBytes: string = part.inlineData.data;
+                    const imageUrl = `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+                    return imageUrl;
+                }
+            }
+        }
+
+        if (response.promptFeedback?.blockReason) {
+            throw new Error(`Your request was blocked. Reason: ${response.promptFeedback.blockReason}. Please adjust your prompt or image.`);
+        }
+        
+        if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+            throw new Error(`Image generation failed. Reason: ${candidate.finishReason}. Please try again.`);
+        }
+
+        console.warn("Gemini API returned a successful response but no image data was found.", response);
+        throw new Error("The API returned an empty response. This could be a temporary issue. Please try again.");
+
+    } catch (error) {
+        console.error("Error calling Gemini API for refinement:", error);
+        if (error instanceof Error) {
+             throw new Error(`Failed to refine the image: ${error.message}`);
+        }
+        throw new Error("Failed to refine the image due to an unknown error.");
+    }
+};
+
+interface GenerateRefinedPromptParams {
+    imageFile: File;
+    prompt: string;
+}
+
+export const generateRefinedPrompt = async ({
+    imageFile,
+    prompt: userPrompt,
+}: GenerateRefinedPromptParams): Promise<string> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    
+    const base64Data = await fileToBase64(imageFile);
+    const imagePart = {
+        inlineData: {
+            data: base64Data,
+            mimeType: imageFile.type,
+        },
+    };
+
+    const systemInstruction = `You are a world-class photographic prompt engineer. Your task is to take a user's simple, conversational request for an image edit and expand it into a detailed, professional, and actionable prompt for an image generation AI.
+
+The image generation AI you are writing for is an expert photo retoucher. It understands photographic terms (e.g., lighting, composition, film stock, color grading, texture).
+
+**Your Process:**
+1.  **Analyze the Image:** Look at the provided black and white portrait. Understand its current style, lighting, and composition.
+2.  **Analyze the User Request:** Understand the user's intent, even if it's simple (e.g., "make it moody," "add a retro filter").
+3.  **Synthesize and Expand:** Combine your analysis into a new, detailed prompt.
+    *   Translate vague terms into specific instructions. "Moody" could become "deepen the shadows, add a subtle vignette, and enhance the contrast in the mid-tones to create a dramatic, chiaroscuro effect."
+    *   "Retro filter" could become "apply a subtle sepia tone, introduce a fine-grained film texture reminiscent of Kodak Tri-X 400, and slightly soften the highlights to emulate a vintage silver gelatin print."
+    *   Be creative and descriptive.
+4.  **Preserve Core Rules:** Remind the AI to preserve the subject's identity, features, and pose. This is critical.
+
+**Output Format:**
+- Your output MUST be ONLY the new, detailed prompt text. Do not include any other explanations, greetings, or markdown formatting. Just the raw text for the next AI.`;
+
+    const contents = {
+        parts: [
+            imagePart,
+            { text: `Here is the user's request: "${userPrompt}"` },
+        ],
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: contents,
+            config: {
+                systemInstruction: systemInstruction,
+                thinkingConfig: {
+                    thinkingBudget: 32768,
+                },
+            },
+        });
+
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error generating refined prompt with gemini-2.5-pro:", error);
+        if (error instanceof Error) {
+            throw new Error(`The advanced model failed to process your request: ${error.message}`);
+        }
+        throw new Error("The advanced model failed to process your request due to an unknown error.");
     }
 };

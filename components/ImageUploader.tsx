@@ -2,16 +2,16 @@ import React, { useCallback, useState } from 'react';
 import UploadIcon from './icons/UploadIcon';
 
 interface ImageUploaderProps {
-    onImageSelect: (file: File) => void;
+    onImagesSelect: (files: File[]) => void;
     isLoading: boolean;
 }
 
-const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelect, isLoading }) => {
+const ImageUploader: React.FC<ImageUploaderProps> = ({ onImagesSelect, isLoading }) => {
     const [isDragging, setIsDragging] = useState(false);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (event.target.files && event.target.files[0]) {
-            onImageSelect(event.target.files[0]);
+        if (event.target.files && event.target.files.length > 0) {
+            onImagesSelect(Array.from(event.target.files));
         }
     };
 
@@ -19,10 +19,10 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelect, isLoading 
         event.preventDefault();
         event.stopPropagation();
         setIsDragging(false);
-        if (event.dataTransfer.files && event.dataTransfer.files[0]) {
-            onImageSelect(event.dataTransfer.files[0]);
+        if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+            onImagesSelect(Array.from(event.dataTransfer.files));
         }
-    }, [onImageSelect]);
+    }, [onImagesSelect]);
 
     const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
         event.preventDefault();
@@ -49,9 +49,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelect, isLoading 
             >
                 <UploadIcon className="mx-auto h-12 w-12 text-gray-500" />
                 <span className="mt-4 block text-lg font-medium text-gray-300 font-sans">
-                    Upload a Portrait
+                    Upload Portrait(s)
                 </span>
-                <p className="text-gray-500 mt-1 text-sm">Drag & drop or click to select a file</p>
+                <p className="text-gray-500 mt-1 text-sm">Drag & drop or click to select files</p>
                 <input 
                     id="file-upload" 
                     name="file-upload" 
@@ -60,6 +60,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelect, isLoading 
                     accept="image/png, image/jpeg, image/webp"
                     onChange={handleFileChange}
                     disabled={isLoading}
+                    multiple
                 />
             </label>
         </div>
